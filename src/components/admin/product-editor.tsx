@@ -2,16 +2,24 @@
 
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { createProductAction, updateProductAction } from '@/app/(admin)/admin/products/actions';
+import { VariantCard } from '@/components/admin/product-editor/variant-card';
+import {
+  DEFAULT_VARIANT_ID,
+  createFallbackVariant,
+  orderSizes,
+  sanitizeVariantForPersist,
+} from '@/components/admin/product-editor/variant-helpers';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import type { Category, Product, SizeKey } from '@/lib/types';
+import type { Category, ColorVariant, Product, SizeKey, VariantMeasurement } from '@/lib/types';
 
 type ProductEditorProps = {
   mode: 'create' | 'edit';
@@ -19,17 +27,6 @@ type ProductEditorProps = {
   initialProduct?: Product;
   categories: Category[];
 };
-
-function fallbackVariant() {
-  return {
-    id: `variant-${Math.random().toString(36).slice(2, 8)}`,
-    colorName: 'Black',
-    colorHex: '#000000',
-    images: [],
-    selectedSizes: ['M'] as SizeKey[],
-    stock: { M: 1 } as Partial<Record<SizeKey, number>>,
-  };
-}
 
 function normalizeSlug(value: string): string {
   return value
@@ -40,11 +37,61 @@ function normalizeSlug(value: string): string {
     .replace(/-+/g, '-');
 }
 
-function parseImageList(value: string): string[] {
-  return value
-    .split('\n')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+function hasAnyMeasurements(variant: ColorVariant) {
+  const measurements = variant.measurements;
+  if (!measurements) return false;
+
+  return Object.values(measurements).some((sizeMeasurements) => {
+    if (!sizeMeasurements) return false;
+    return Object.values(sizeMeasurements).some((value) => typeof value === 'number' && value > 0);
+  });
+}
+
+function cloneMeasurements(
+  source: Partial<Record<SizeKey, VariantMeasurement>> | undefined,
+  sizeFilter: SizeKey[]
+): Partial<Record<SizeKey, VariantMeasurement>> | undefined {
+  if (!source) return undefined;
+
+  const result: Partial<Record<SizeKey, VariantMeasurement>> = {};
+
+  for (const size of sizeFilter) {
+    const row = source[size];
+    if (!row) continue;
+
+    const nextRow: VariantMeasurement = {};
+    for (const [field, value] of Object.entries(row)) {
+      if (typeof value !== 'number' || value <= 0) continue;
+      nextRow[field as keyof VariantMeasurement] = value;
+    }
+
+    if (Object.keys(nextRow).length > 0) {
+      result[size] = nextRow;
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function prepareVariantForEditor(variant: ColorVariant): ColorVariant {
+  const selectedSizes = orderSizes(
+    variant.selectedSizes.length > 0 ? variant.selectedSizes : (Object.keys(variant.stock) as SizeKey[])
+  );
+
+  const withRequiredSize = selectedSizes.length > 0 ? selectedSizes : (['M'] as SizeKey[]);
+
+  return sanitizeVariantForPersist({
+    ...variant,
+    id: variant.id || DEFAULT_VARIANT_ID,
+    selectedSizes: withRequiredSize,
+    stock:
+      selectedSizes.length > 0
+        ? variant.stock
+        : {
+            ...variant.stock,
+            M: variant.stock.M ?? 0,
+          },
+  });
 }
 
 export function ProductEditor({ mode, productId, initialProduct, categories }: ProductEditorProps) {
@@ -59,9 +106,20 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
     return undefined;
   }, [initialProduct, mode]);
 
+  const initialVariants = useMemo<ColorVariant[]>(() => {
+    if (sourceProduct?.colorVariants?.length) {
+      return sourceProduct.colorVariants.map((variant) => prepareVariantForEditor(variant));
+    }
+
+    return [createFallbackVariant(DEFAULT_VARIANT_ID)];
+  }, [sourceProduct]);
+
   const [form, setForm] = useState<Product>(() => {
     if (sourceProduct) {
-      return sourceProduct;
+      return {
+        ...sourceProduct,
+        colorVariants: initialVariants,
+      };
     }
 
     return {
@@ -75,11 +133,84 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       salePrice: undefined,
       isFeatured: false,
       isPublished: true,
-      colorVariants: [fallbackVariant()],
+      colorVariants: initialVariants,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
   });
+
+  const [expandedVariantId, setExpandedVariantId] = useState<string | null>(
+    initialVariants[0]?.id ?? null
+  );
+  const [tagsInput, setTagsInput] = useState('');
+
+  const autoSlug = useMemo(() => {
+    const base = form.name.trim() || form.slug.trim() || 'product';
+    return normalizeSlug(base);
+  }, [form.name, form.slug]);
+
+  const addVariant = () => {
+    const nextVariant = createFallbackVariant();
+    setForm((prev) => ({
+      ...prev,
+      colorVariants: [...prev.colorVariants, nextVariant],
+    }));
+    setExpandedVariantId(nextVariant.id);
+  };
+
+  const removeVariant = (variantId: string) => {
+    if (form.colorVariants.length <= 1) {
+      toast.error('At least one color variant is required.');
+      return;
+    }
+
+    const nextVariants = form.colorVariants.filter((variant) => variant.id !== variantId);
+    setForm((prev) => ({
+      ...prev,
+      colorVariants: nextVariants,
+    }));
+
+    if (expandedVariantId === variantId) {
+      setExpandedVariantId(nextVariants[0]?.id ?? null);
+    }
+  };
+
+  const updateVariant = (nextVariant: ColorVariant) => {
+    setForm((prev) => ({
+      ...prev,
+      colorVariants: prev.colorVariants.map((variant) =>
+        variant.id === nextVariant.id ? nextVariant : variant
+      ),
+    }));
+  };
+
+  const copyVariantMeasurements = (targetVariantId: string, sourceVariantId: string) => {
+    const sourceVariant = form.colorVariants.find((variant) => variant.id === sourceVariantId);
+    const targetVariant = form.colorVariants.find((variant) => variant.id === targetVariantId);
+
+    if (!sourceVariant || !targetVariant) return;
+
+    const copied = cloneMeasurements(sourceVariant.measurements, targetVariant.selectedSizes);
+
+    if (!copied) {
+      toast.warning('No measurements to copy for selected target sizes.');
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      colorVariants: prev.colorVariants.map((variant) =>
+        variant.id === targetVariantId
+          ? {
+              ...variant,
+              measurements: copied,
+            }
+          : variant
+      ),
+    }));
+
+    toast.success('Measurements copied.');
+  };
 
   const saveProduct = () => {
     if (!form.name.trim()) {
@@ -92,24 +223,30 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       return;
     }
 
+    if (form.colorVariants.length === 0) {
+      toast.error('At least one color variant is required.');
+      return;
+    }
+
+    const sanitizedVariants = form.colorVariants.map((variant) => sanitizeVariantForPersist(variant));
+
+    if (sanitizedVariants.length === 0) {
+      toast.error('At least one valid color variant is required.');
+      return;
+    }
+
     startTransition(async () => {
       const payload = {
-        sku: form.sku?.trim() || undefined,
+        sku: undefined,
         name: form.name.trim(),
-        slug: normalizeSlug(form.slug || form.name),
+        slug: autoSlug,
         description: form.description.trim(),
         categoryId: form.categoryId,
         basePrice: Number(form.basePrice) || 0,
         salePrice: form.salePrice && form.salePrice > 0 ? Number(form.salePrice) : undefined,
         isFeatured: form.isFeatured,
         isPublished: form.isPublished,
-        colorVariants: form.colorVariants.map((variant) => ({
-          ...variant,
-          colorName: variant.colorName.trim() || 'Unnamed',
-          colorHex: variant.colorHex.trim() || '#000000',
-          images: variant.images,
-          selectedSizes: Array.from(new Set(variant.selectedSizes)),
-        })),
+        colorVariants: sanitizedVariants,
       };
 
       const result =
@@ -127,14 +264,17 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       if (mode === 'create') {
         router.push(`/admin/products/${result.data._id}/edit`);
       } else {
-        setForm(result.data);
+        setForm({
+          ...result.data,
+          colorVariants: result.data.colorVariants.map((variant) => prepareVariantForEditor(variant)),
+        });
       }
       router.refresh();
     });
   };
 
   return (
-    <div className="space-y-6 rounded border bg-white p-6">
+    <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
           <Label>Name</Label>
@@ -144,27 +284,20 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
           />
         </div>
         <div className="space-y-2">
-          <Label>SKU</Label>
+          <Label>Slug</Label>
           <Input
-            value={form.sku}
-            onChange={(event) => setForm((prev) => ({ ...prev, sku: event.target.value }))}
+            value={autoSlug}
+            readOnly
+            className="bg-muted/40 text-muted-foreground"
           />
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <Label>Slug</Label>
-          <Input
-            value={form.slug}
-            onChange={(event) => setForm((prev) => ({ ...prev, slug: event.target.value }))}
-            placeholder="auto-from-name"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Category</Label>
+          <Label>Categories</Label>
           <select
-            className="w-full rounded border px-3 py-2 text-sm"
+            className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
             value={form.categoryId}
             onChange={(event) => setForm((prev) => ({ ...prev, categoryId: event.target.value }))}
           >
@@ -175,6 +308,14 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
             ))}
           </select>
         </div>
+        <div className="space-y-2">
+          <Label>Tags</Label>
+          <Input
+            value={tagsInput}
+            onChange={(event) => setTagsInput(event.target.value)}
+            placeholder="cloth, anime, soft"
+          />
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -183,19 +324,33 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
           <Input
             type="number"
             value={form.basePrice ?? 0}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, basePrice: Number(event.target.value) || 0 }))
-            }
+            onChange={(event) => {
+              const raw = Number(event.target.value);
+              setForm((prev) => ({
+                ...prev,
+                basePrice: Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0,
+              }));
+            }}
           />
         </div>
         <div className="space-y-2">
           <Label>Sale Price (MMK)</Label>
           <Input
             type="number"
-            value={form.salePrice ?? 0}
-            onChange={(event) =>
-              setForm((prev) => ({ ...prev, salePrice: Number(event.target.value) || undefined }))
-            }
+            value={form.salePrice ?? ''}
+            onChange={(event) => {
+              const raw = event.target.value;
+              if (!raw) {
+                setForm((prev) => ({ ...prev, salePrice: undefined }));
+                return;
+              }
+
+              const parsed = Number(raw);
+              setForm((prev) => ({
+                ...prev,
+                salePrice: Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined,
+              }));
+            }}
           />
         </div>
       </div>
@@ -203,9 +358,10 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       <div className="space-y-2">
         <Label>Description</Label>
         <Textarea
-          rows={4}
+          rows={5}
           value={form.description}
           onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+          placeholder="Write product description..."
         />
       </div>
 
@@ -226,129 +382,45 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
         </label>
       </div>
 
-      <section className="space-y-4 rounded border p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="font-semibold">Color Variants</h2>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() =>
-              setForm((prev) => ({
-                ...prev,
-                colorVariants: [...prev.colorVariants, fallbackVariant()],
-              }))
-            }
-          >
-            <Plus className="size-4" /> Add Variant
-          </Button>
+      <section className="space-y-4 rounded-lg border p-4">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Color Variants
+          </h2>
+          <Badge variant="secondary">{form.colorVariants.length}</Badge>
         </div>
 
-        {form.colorVariants.map((variant, index) => (
-          <div key={variant.id} className="space-y-4 rounded border p-3">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label>Color Name</Label>
-                <Input
-                  value={variant.colorName}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      colorVariants: prev.colorVariants.map((entry, entryIndex) =>
-                        entryIndex === index ? { ...entry, colorName: event.target.value } : entry
-                      ),
-                    }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Color Hex</Label>
-                <Input
-                  value={variant.colorHex}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      colorVariants: prev.colorVariants.map((entry, entryIndex) =>
-                        entryIndex === index ? { ...entry, colorHex: event.target.value } : entry
-                      ),
-                    }))
-                  }
-                />
-              </div>
-              <div className="flex items-end justify-end">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() =>
-                    setForm((prev) => ({
-                      ...prev,
-                      colorVariants: prev.colorVariants.filter(
-                        (_, entryIndex) => entryIndex !== index
-                      ),
-                    }))
-                  }
-                  disabled={form.colorVariants.length <= 1}
-                >
-                  <Trash2 className="size-4" /> Remove
-                </Button>
-              </div>
-            </div>
+        <div className="space-y-3">
+          {form.colorVariants.map((variant, index) => (
+            <VariantCard
+              key={variant.id}
+              variant={variant}
+              index={index}
+              isOpen={expandedVariantId === variant.id}
+              canRemove={form.colorVariants.length > 1}
+              copySourceVariants={form.colorVariants
+                .filter((entry) => entry.id !== variant.id && hasAnyMeasurements(entry))
+                .map((entry) => ({ id: entry.id, colorName: entry.colorName }))}
+              onToggleOpen={() =>
+                setExpandedVariantId((prev) => (prev === variant.id ? null : variant.id))
+              }
+              onUpdate={updateVariant}
+              onRemove={() => removeVariant(variant.id)}
+              onCopyMeasurements={(sourceVariantId) =>
+                copyVariantMeasurements(variant.id, sourceVariantId)
+              }
+            />
+          ))}
+        </div>
 
-            <div className="space-y-2">
-              <Label>Image URLs (one per line)</Label>
-              <Textarea
-                rows={3}
-                value={variant.images.join('\n')}
-                onChange={(event) => {
-                  const images = parseImageList(event.target.value);
-                  setForm((prev) => ({
-                    ...prev,
-                    colorVariants: prev.colorVariants.map((entry, entryIndex) =>
-                      entryIndex === index ? { ...entry, images } : entry
-                    ),
-                  }));
-                }}
-              />
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-3">
-              {(['XS', 'S', 'M', 'L', 'XL', 'XXL'] as SizeKey[]).map((size) => (
-                <div key={`${variant.id}-${size}`} className="space-y-2">
-                  <Label>{size} stock</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={variant.stock[size] ?? 0}
-                    onChange={(event) => {
-                      const value = Number(event.target.value) || 0;
-                      setForm((prev) => ({
-                        ...prev,
-                        colorVariants: prev.colorVariants.map((entry, entryIndex) => {
-                          if (entryIndex !== index) return entry;
-                          return {
-                            ...entry,
-                            selectedSizes: Array.from(new Set([...entry.selectedSizes, size])),
-                            stock: {
-                              ...entry.stock,
-                              [size]: value,
-                            },
-                          };
-                        }),
-                      }));
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
+        <Button type="button" variant="outline" className="w-full border-dashed" onClick={addVariant}>
+          <Plus className="size-4" />
+          Add Color Variant
+        </Button>
       </section>
 
       <div className="flex justify-end gap-2">
-        <Button
-          className="bg-black text-white hover:bg-zinc-800"
-          disabled={isPending}
-          onClick={saveProduct}
-        >
+        <Button className="bg-black text-white hover:bg-zinc-800" disabled={isPending} onClick={saveProduct}>
           {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
           {mode === 'create' ? 'Create Product' : 'Update Product'}
         </Button>
