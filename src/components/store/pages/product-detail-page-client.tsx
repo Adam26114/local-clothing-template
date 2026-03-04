@@ -39,7 +39,6 @@ export function ProductDetailPageClient({
   const currentStock = selectedVariant.stock[size] ?? 0;
   const isOut = currentStock <= 0;
   const lowStock = currentStock > 0 && currentStock < 5;
-
   const addToCart = () => {
     if (isOut) {
       toast.error('Item sold out. Removed from cart.');
