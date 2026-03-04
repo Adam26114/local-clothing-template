@@ -31,6 +31,12 @@ import {
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
 
+/**
+ * Renders the application's collapsible admin sidebar with primary, document, and secondary navigation groups plus a user footer.
+ *
+ * @param userEmail - Optional email address displayed in the footer; defaults to "admin@khit.mm" when not provided
+ * @returns The rendered Sidebar React element
+ */
 export function AppSidebar({
   userEmail,
   ...props
