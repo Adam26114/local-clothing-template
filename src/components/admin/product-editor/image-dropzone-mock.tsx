@@ -186,7 +186,7 @@ export function ImageDropzoneMock({ imageUrls, onAddUrl, onRemoveUrl }: ImageDro
                       return prev.filter((entry) => entry.id !== preview.id);
                     });
                   }}
-                  className="absolute right-1 top-1 hidden size-5 items-center justify-center rounded-full bg-background/90 text-foreground group-hover:flex"
+                  className="absolute right-1 top-1 hidden size-5 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground group-hover:flex"
                 >
                   <X className="size-3" />
                   <span className="sr-only">Remove local preview</span>
