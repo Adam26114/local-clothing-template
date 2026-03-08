@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
@@ -295,7 +296,15 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <Label>Categories</Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label>Categories</Label>
+            <Link
+              href="/admin/categories"
+              className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Manage categories
+            </Link>
+          </div>
           <select
             className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
             value={form.categoryId}
@@ -304,6 +313,7 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
             {categories.map((category) => (
               <option key={category._id} value={category._id}>
                 {category.name}
+                {category.isActive ? '' : ' (inactive)'}
               </option>
             ))}
           </select>

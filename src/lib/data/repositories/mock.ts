@@ -19,6 +19,7 @@ import type {
 } from '@/lib/types';
 
 import type {
+  CategoryUpsertInput,
   CategoryRepository,
   DashboardRepository,
   DataRepositories,
@@ -79,6 +80,53 @@ function ensureUniqueSlug(base: string, currentId?: string): string {
   }
 
   return candidate;
+}
+
+function ensureUniqueCategorySlug(base: string, currentId?: string): string {
+  const clean = toSlug(base) || `category-${randomSuffix()}`;
+  let candidate = clean;
+  let index = 1;
+
+  while (state.categories.some((category) => category.slug === candidate && category._id !== currentId)) {
+    candidate = `${clean}-${index}`;
+    index += 1;
+  }
+
+  return candidate;
+}
+
+function categoryDescendantIds(rootId: string): Set<string> {
+  const descendants = new Set<string>();
+  const queue: string[] = [rootId];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+    const children = state.categories.filter((category) => category.parentId === current);
+    for (const child of children) {
+      if (descendants.has(child._id)) continue;
+      descendants.add(child._id);
+      queue.push(child._id);
+    }
+  }
+
+  return descendants;
+}
+
+function normalizeCategoryInput(input: CategoryUpsertInput): CategoryUpsertInput & { name: string } {
+  const name = input.name.trim();
+  if (!name) {
+    throw new Error('Category name is required.');
+  }
+
+  return {
+    name,
+    slug: input.slug?.trim() || name,
+    description: input.description?.trim() || undefined,
+    parentId: input.parentId || undefined,
+    sortOrder: Number.isFinite(input.sortOrder) ? Math.max(0, Math.floor(input.sortOrder)) : 0,
+    isActive: input.isActive,
+  };
 }
 
 function normalizeVariantMeasurements(
@@ -300,6 +348,117 @@ function createCategoryRepository(): CategoryRepository {
         .filter((item) => (options?.activeOnly === false ? true : item.isActive))
         .sort((a, b) => a.sortOrder - b.sortOrder);
       return deepClone(rows);
+    },
+
+    async getById(id) {
+      const row = state.categories.find((item) => item._id === id);
+      return row ? deepClone(row) : undefined;
+    },
+
+    async create(input: CategoryUpsertInput) {
+      const normalized = normalizeCategoryInput(input);
+      const parent = normalized.parentId
+        ? state.categories.find((item) => item._id === normalized.parentId)
+        : undefined;
+
+      if (normalized.parentId && !parent) {
+        throw new Error('Selected parent category does not exist.');
+      }
+
+      if (parent && normalized.isActive && !parent.isActive) {
+        throw new Error('Cannot create an active child under an inactive parent.');
+      }
+
+      const now = Date.now();
+      const category: Category = {
+        _id: `cat-${randomSuffix()}`,
+        name: normalized.name,
+        slug: ensureUniqueCategorySlug(normalized.slug || normalized.name),
+        description: normalized.description,
+        parentId: normalized.parentId,
+        sortOrder: normalized.sortOrder,
+        isActive: normalized.isActive,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      state.categories.push(category);
+      return deepClone(category);
+    },
+
+    async update(id, input: CategoryUpsertInput) {
+      const existing = state.categories.find((item) => item._id === id);
+      if (!existing) {
+        throw new Error('Category not found.');
+      }
+
+      const normalized = normalizeCategoryInput(input);
+      if (normalized.parentId === id) {
+        throw new Error('Category cannot be its own parent.');
+      }
+
+      const parent = normalized.parentId
+        ? state.categories.find((item) => item._id === normalized.parentId)
+        : undefined;
+
+      if (normalized.parentId && !parent) {
+        throw new Error('Selected parent category does not exist.');
+      }
+
+      const descendants = categoryDescendantIds(id);
+      if (normalized.parentId && descendants.has(normalized.parentId)) {
+        throw new Error('Category cannot be moved under its own descendant.');
+      }
+
+      if (parent && normalized.isActive && !parent.isActive) {
+        throw new Error('Cannot set category active while parent is inactive.');
+      }
+
+      existing.name = normalized.name;
+      existing.slug = ensureUniqueCategorySlug(normalized.slug || normalized.name, id);
+      existing.description = normalized.description;
+      existing.parentId = normalized.parentId;
+      existing.sortOrder = normalized.sortOrder;
+      existing.isActive = normalized.isActive;
+      existing.updatedAt = Date.now();
+
+      return deepClone(existing);
+    },
+
+    async deactivate(id) {
+      const existing = state.categories.find((item) => item._id === id);
+      if (!existing) {
+        throw new Error('Category not found.');
+      }
+
+      const now = Date.now();
+      existing.isActive = false;
+      existing.updatedAt = now;
+      const descendants = categoryDescendantIds(id);
+
+      for (const childId of descendants) {
+        const child = state.categories.find((item) => item._id === childId);
+        if (!child) continue;
+        child.isActive = false;
+        child.updatedAt = now;
+      }
+    },
+
+    async reactivate(id) {
+      const existing = state.categories.find((item) => item._id === id);
+      if (!existing) {
+        throw new Error('Category not found.');
+      }
+
+      if (existing.parentId) {
+        const parent = state.categories.find((item) => item._id === existing.parentId);
+        if (!parent || !parent.isActive) {
+          throw new Error('Cannot reactivate category while parent is inactive.');
+        }
+      }
+
+      existing.isActive = true;
+      existing.updatedAt = Date.now();
     },
   };
 }
