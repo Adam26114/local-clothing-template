@@ -14,6 +14,7 @@ import type {
 } from '@/lib/types';
 
 import type {
+  CategoryUpsertInput,
   CategoryRepository,
   DashboardRepository,
   DataRepositories,
@@ -257,6 +258,11 @@ function toUser(input: UnknownRecord): User {
 
 const refs = {
   categoriesList: makeFunctionReference<'query'>('categories:list'),
+  categoryById: makeFunctionReference<'query'>('categories:byId'),
+  categoryCreate: makeFunctionReference<'mutation'>('categories:create'),
+  categoryUpdate: makeFunctionReference<'mutation'>('categories:update'),
+  categoryDeactivate: makeFunctionReference<'mutation'>('categories:deactivate'),
+  categoryReactivate: makeFunctionReference<'mutation'>('categories:reactivate'),
   settingsGet: makeFunctionReference<'query'>('settings:get'),
 
   productsList: makeFunctionReference<'query'>('products:list'),
@@ -427,6 +433,45 @@ function createCategoryRepository(): CategoryRepository {
         return categories;
       }
       return categories.filter((category) => category.isActive);
+    },
+
+    async getById(id) {
+      const convex = getConvexClient();
+      const row = (await convex.query(refs.categoryById, { id })) as UnknownRecord | null;
+      return row ? toCategory(row) : undefined;
+    },
+
+    async create(input: CategoryUpsertInput) {
+      const convex = getConvexClient();
+      const createdId = (await convex.mutation(refs.categoryCreate, input)) as string;
+      const category = await this.getById(createdId);
+      if (!category) {
+        throw new Error('Failed to fetch created category.');
+      }
+      return category;
+    },
+
+    async update(id, input: CategoryUpsertInput) {
+      const convex = getConvexClient();
+      await convex.mutation(refs.categoryUpdate, {
+        id,
+        ...input,
+      });
+      const category = await this.getById(id);
+      if (!category) {
+        throw new Error('Failed to fetch updated category.');
+      }
+      return category;
+    },
+
+    async deactivate(id) {
+      const convex = getConvexClient();
+      await convex.mutation(refs.categoryDeactivate, { id });
+    },
+
+    async reactivate(id) {
+      const convex = getConvexClient();
+      await convex.mutation(refs.categoryReactivate, { id });
     },
   };
 }

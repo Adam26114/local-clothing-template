@@ -9,6 +9,14 @@ import type {
 } from '@/lib/types';
 
 export type ProductUpsertInput = Omit<Product, '_id' | 'createdAt' | 'updatedAt'>;
+export type CategoryUpsertInput = {
+  name: string;
+  slug?: string;
+  description?: string;
+  parentId?: string;
+  sortOrder: number;
+  isActive: boolean;
+};
 
 export type InventoryRow = {
   productId: string;
@@ -60,6 +68,11 @@ export interface ProductRepository {
 
 export interface CategoryRepository {
   list(options?: { activeOnly?: boolean }): Promise<Category[]>;
+  getById(id: string): Promise<Category | undefined>;
+  create(input: CategoryUpsertInput): Promise<Category>;
+  update(id: string, input: CategoryUpsertInput): Promise<Category>;
+  deactivate(id: string): Promise<void>;
+  reactivate(id: string): Promise<void>;
 }
 
 export interface SettingsRepository {

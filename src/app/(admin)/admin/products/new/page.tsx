@@ -4,7 +4,7 @@ import { getServerDataRepositories } from '@/lib/data/repositories';
 
 export default async function NewProductPage() {
   const { repositories, selection } = getServerDataRepositories();
-  const categories = await repositories.categories.list({ activeOnly: false });
+  const categories = await repositories.categories.list({ activeOnly: true });
 
   return (
     <div className="space-y-6 px-4 lg:px-6">

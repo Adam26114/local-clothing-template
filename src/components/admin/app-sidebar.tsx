@@ -4,6 +4,7 @@ import type * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  IconCategory2,
   IconDashboard,
   IconDatabase,
   IconHelp,
@@ -57,6 +58,12 @@ export function AppSidebar({
       url: '/admin/products',
       icon: IconPackageExport,
       isActive: pathname.startsWith('/admin/products'),
+    },
+    {
+      title: 'Categories',
+      url: '/admin/categories',
+      icon: IconCategory2,
+      isActive: pathname.startsWith('/admin/categories'),
     },
     {
       title: 'Inventory',
