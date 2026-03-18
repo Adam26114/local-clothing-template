@@ -78,6 +78,7 @@ export type AdminDataTableProps<TData, TValue> = {
   dashboardTabs?: Array<{ value: string; label: string; badge?: number }>;
   enableRowDrag?: boolean;
   getRowId?: (row: TData, index: number) => string;
+  onRowOrderChange?: (rows: TData[]) => void;
   showColumnsButton?: boolean;
   showAddButton?: boolean;
   addButtonLabel?: string;
@@ -137,6 +138,7 @@ export function AdminDataTable<TData, TValue>({
   dashboardTabs = DEFAULT_DASHBOARD_TABS,
   enableRowDrag = false,
   getRowId,
+  onRowOrderChange,
   showColumnsButton = true,
   showAddButton = true,
   addButtonLabel = 'Add',
@@ -264,7 +266,9 @@ export function AdminDataTable<TData, TValue>({
         (row, index) => resolvedGetRowId(row, index) === String(over.id)
       );
       if (oldIndex < 0 || newIndex < 0) return currentData;
-      return arrayMove(currentData, oldIndex, newIndex);
+      const nextData = arrayMove(currentData, oldIndex, newIndex);
+      onRowOrderChange?.(nextData);
+      return nextData;
     });
   }
 
