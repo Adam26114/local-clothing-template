@@ -4,16 +4,21 @@ import Link from 'next/link';
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Loader2 } from 'lucide-react';
+import { Loader2, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import {
-  deactivateCategoryAction,
-  reactivateCategoryAction,
-} from '@/app/(admin)/admin/categories/actions';
+import { deactivateCategoryAction, updateCategoryAction } from '@/app/(admin)/admin/categories/actions';
 import { AdminDataTable, withRowSelection } from '@/components/admin/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Category } from '@/lib/types';
 
 type CategoriesTableProps = {
@@ -93,27 +98,45 @@ export function CategoriesTable({ initialCategories }: CategoriesTableProps) {
     });
   };
 
-  const reactivateCategory = (id: string) => {
+  const persistRowOrder = (nextRows: Category[]) => {
+    const previousRows = rows;
+    setRows(nextRows);
+
     startTransition(async () => {
-      const result = await reactivateCategoryAction(id);
-      if (!result.ok) {
-        toast.error(result.error);
+      const updates = nextRows
+        .map((category, index) => ({ category, nextSortOrder: index }))
+        .filter(({ category, nextSortOrder }) => category.sortOrder !== nextSortOrder);
+
+      if (updates.length === 0) return;
+
+      const results = await Promise.all(
+        updates.map(({ category, nextSortOrder }) =>
+          updateCategoryAction(category._id, {
+            name: category.name,
+            slug: category.slug,
+            parentId: category.parentId,
+            description: category.description ?? '',
+            sortOrder: nextSortOrder,
+            isActive: category.isActive,
+          })
+        )
+      );
+
+      const firstError = results.find((result) => !result.ok);
+      if (firstError && !firstError.ok) {
+        toast.error(firstError.error);
+        setRows(previousRows);
         return;
       }
 
       setRows((prev) =>
-        prev.map((category) =>
-          category._id === id
-            ? {
-                ...category,
-                isActive: true,
-                updatedAt: Date.now(),
-              }
-            : category
-        )
+        prev.map((category) => {
+          const newIndex = nextRows.findIndex((row) => row._id === category._id);
+          if (newIndex < 0) return category;
+          return { ...category, sortOrder: newIndex };
+        })
       );
-
-      toast.success('Category reactivated.');
+      toast.success('Category order updated.');
     });
   };
 
@@ -155,59 +178,83 @@ export function CategoriesTable({ initialCategories }: CategoriesTableProps) {
       cell: ({ row }) => new Date(row.original.updatedAt).toLocaleDateString(),
     },
     {
-      id: 'actions',
-      header: 'Actions',
-      cell: ({ row }) => (
-        <div className="flex flex-wrap gap-2">
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/admin/categories/${row.original._id}/edit`}>Edit</Link>
-          </Button>
-          {row.original.isActive ? (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={isPending}
-              onClick={() => deactivateCategory(row.original._id)}
-            >
-              Deactivate
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={isPending}
-              onClick={() => reactivateCategory(row.original._id)}
-            >
-              Reactivate
-            </Button>
-          )}
-        </div>
-      ),
+      id: 'rowMenu',
+      header: () => null,
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const isInactive = !row.original.isActive;
+
+        return (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                className="flex size-8 text-muted-foreground data-[state=open]:bg-muted"
+                size="icon"
+              >
+                <MoreHorizontal className="size-4" />
+                <span className="sr-only">Open row menu</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-36">
+              <DropdownMenuItem onClick={() => router.push('/admin/categories/new')}>
+                <Plus className="size-4" />
+                <span>Create</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push(`/admin/categories/${row.original._id}/edit`)}>
+                <Pencil className="size-4" />
+                <span>Update</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={isInactive || isPending}
+                onClick={() => {
+                  if (isInactive) return;
+                  deactivateCategory(row.original._id);
+                }}
+              >
+                <Trash2 className="size-4" />
+                <span>Delete</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        );
+      },
     },
   ];
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        <select
-          className="rounded border bg-white px-3 py-1 text-sm"
+        <Select
           value={activeFilter}
-          onChange={(event) => setActiveFilter(event.target.value as 'all' | 'active' | 'inactive')}
+          onValueChange={(value: 'all' | 'active' | 'inactive') => setActiveFilter(value)}
         >
-          <option value="all">All Status</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
+          <SelectTrigger className="w-[112px]">
+            <SelectValue placeholder="All Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="active">Active</SelectItem>
+            <SelectItem value="inactive">Inactive</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <select
-          className="rounded border bg-white px-3 py-1 text-sm"
+        <Select
           value={levelFilter}
-          onChange={(event) => setLevelFilter(event.target.value as 'all' | 'parent' | 'child')}
+          onValueChange={(value: 'all' | 'parent' | 'child') => setLevelFilter(value)}
         >
-          <option value="all">All Levels</option>
-          <option value="parent">Parent Categories</option>
-          <option value="child">Child Categories</option>
-        </select>
+          <SelectTrigger className="w-[168px]">
+            <SelectValue placeholder="All Levels" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Levels</SelectItem>
+            <SelectItem value="parent">Parent Categories</SelectItem>
+            <SelectItem value="child">Child Categories</SelectItem>
+          </SelectContent>
+        </Select>
 
         {isPending ? (
           <span className="inline-flex items-center gap-2 text-sm text-zinc-500">
@@ -220,6 +267,9 @@ export function CategoriesTable({ initialCategories }: CategoriesTableProps) {
         tableId="categories"
         columns={withRowSelection(columns)}
         data={filteredRows}
+        enableRowDrag
+        getRowId={(row) => row._id}
+        onRowOrderChange={persistRowOrder}
         searchPlaceholder="Search by name, slug, or parent"
         onSelectedRowsChange={setSelectedCategories}
         addButtonLabel="Add Category"
