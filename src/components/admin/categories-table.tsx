@@ -4,11 +4,34 @@ import Link from 'next/link';
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Loader2, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
+import {
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  ToggleLeft,
+  ToggleRight,
+  Trash2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
-import { deactivateCategoryAction, updateCategoryAction } from '@/app/(admin)/admin/categories/actions';
+import {
+  activateCategoryAction,
+  deleteCategoryAction,
+  deactivateCategoryAction,
+  updateCategoryAction,
+} from '@/app/(admin)/admin/categories/actions';
 import { AdminDataTable, withRowSelection } from '@/components/admin/data-table';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,30 +42,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { mergeVisibleOrder } from '@/components/admin/category-order';
+import { collectCategoryDeleteIds } from '@/lib/category-delete';
 import type { Category } from '@/lib/types';
 
 type CategoriesTableProps = {
   initialCategories: Category[];
 };
-
-function collectDescendantIds(categories: Category[], rootId: string) {
-  const descendants = new Set<string>();
-  const queue: string[] = [rootId];
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) continue;
-
-    const children = categories.filter((item) => item.parentId === current);
-    for (const child of children) {
-      if (descendants.has(child._id)) continue;
-      descendants.add(child._id);
-      queue.push(child._id);
-    }
-  }
-
-  return descendants;
-}
 
 export function CategoriesTable({ initialCategories }: CategoriesTableProps) {
   const router = useRouter();
@@ -50,6 +56,7 @@ export function CategoriesTable({ initialCategories }: CategoriesTableProps) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [levelFilter, setLevelFilter] = useState<'all' | 'parent' | 'child'>('all');
   const [selectedCategories, setSelectedCategories] = useState<Category[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const parentMap = useMemo(() => {
@@ -70,42 +77,73 @@ export function CategoriesTable({ initialCategories }: CategoriesTableProps) {
     });
   }, [activeFilter, levelFilter, rows]);
 
-  const deactivateCategory = (id: string) => {
+  const setCategoryStatus = (id: string, nextActive: boolean) => {
     startTransition(async () => {
-      const result = await deactivateCategoryAction(id);
+      const result = nextActive
+        ? await activateCategoryAction(id)
+        : await deactivateCategoryAction(id);
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
 
       setRows((prev) => {
-        const descendants = collectDescendantIds(prev, id);
-        const ids = new Set<string>([id, ...descendants]);
+        const ids = nextActive ? new Set<string>([id]) : collectCategoryDeleteIds(prev, id);
         const now = Date.now();
 
         return prev.map((category) =>
           ids.has(category._id)
             ? {
                 ...category,
-                isActive: false,
+                isActive: nextActive,
                 updatedAt: now,
               }
             : category
         );
       });
 
-      toast.success('Category deactivated.');
+      toast.success(nextActive ? 'Category activated.' : 'Category deactivated.');
+    });
+  };
+
+  const confirmDeleteCategory = () => {
+    if (!deleteTarget) return;
+
+    const target = deleteTarget;
+    const ids = collectCategoryDeleteIds(rows, target._id);
+
+    startTransition(async () => {
+      const result = await deleteCategoryAction(target._id);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      setRows((prev) => prev.filter((category) => !ids.has(category._id)));
+      setSelectedCategories((prev) => prev.filter((category) => !ids.has(category._id)));
+      setDeleteTarget(null);
+      toast.success('Category deleted.');
     });
   };
 
   const persistRowOrder = (nextRows: Category[]) => {
     const previousRows = rows;
-    setRows(nextRows);
+    const mergedRows = mergeVisibleOrder(previousRows, nextRows);
+    const nextRowsWithOrder = mergedRows.map((category, index) => ({
+      ...category,
+      sortOrder: index,
+    }));
+
+    setRows(nextRowsWithOrder);
 
     startTransition(async () => {
-      const updates = nextRows
-        .map((category, index) => ({ category, nextSortOrder: index }))
-        .filter(({ category, nextSortOrder }) => category.sortOrder !== nextSortOrder);
+      const updates = mergedRows
+        .map((category, index) => ({
+          category,
+          nextSortOrder: index,
+          previousSortOrder: previousRows.find((row) => row._id === category._id)?.sortOrder ?? index,
+        }))
+        .filter(({ previousSortOrder, nextSortOrder }) => previousSortOrder !== nextSortOrder);
 
       if (updates.length === 0) return;
 
@@ -129,13 +167,6 @@ export function CategoriesTable({ initialCategories }: CategoriesTableProps) {
         return;
       }
 
-      setRows((prev) =>
-        prev.map((category) => {
-          const newIndex = nextRows.findIndex((row) => row._id === category._id);
-          if (newIndex < 0) return category;
-          return { ...category, sortOrder: newIndex };
-        })
-      );
       toast.success('Category order updated.');
     });
   };
@@ -157,6 +188,7 @@ export function CategoriesTable({ initialCategories }: CategoriesTableProps) {
     {
       id: 'parent',
       header: 'Parent',
+      enableSorting: false,
       cell: ({ row }) => (row.original.parentId ? parentMap.get(row.original.parentId) ?? '-' : '—'),
     },
     {
@@ -206,13 +238,19 @@ export function CategoriesTable({ initialCategories }: CategoriesTableProps) {
                 <Pencil className="size-4" />
                 <span>Update</span>
               </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={isPending}
+                onClick={() => setCategoryStatus(row.original._id, isInactive)}
+              >
+                {isInactive ? <ToggleRight className="size-4" /> : <ToggleLeft className="size-4" />}
+                <span>{isInactive ? 'Activate' : 'Deactivate'}</span>
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 variant="destructive"
-                disabled={isInactive || isPending}
+                disabled={isPending}
                 onClick={() => {
-                  if (isInactive) return;
-                  deactivateCategory(row.original._id);
+                  setDeleteTarget(row.original);
                 }}
               >
                 <Trash2 className="size-4" />
@@ -280,6 +318,39 @@ export function CategoriesTable({ initialCategories }: CategoriesTableProps) {
           ) : null
         }
       />
+
+      <AlertDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete category?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {deleteTarget?.name ?? 'this category'} and all of its
+              child categories from the database. This cannot be undone.
+              {deleteTarget ? ' If products still use this category tree, deletion will be blocked.' : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                confirmDeleteCategory();
+              }}
+            >
+              {isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

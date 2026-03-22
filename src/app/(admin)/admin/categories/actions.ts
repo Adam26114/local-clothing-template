@@ -66,6 +66,24 @@ export async function updateCategoryAction(
   }
 }
 
+export async function deleteCategoryAction(id: string): Promise<ActionResult<{ id: string }>> {
+  try {
+    const { repositories } = getServerDataRepositories();
+    await repositories.categories.delete(id);
+    revalidateCategorySurfaces();
+
+    return {
+      ok: true,
+      data: { id },
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Failed to delete category.',
+    };
+  }
+}
+
 export async function deactivateCategoryAction(id: string): Promise<ActionResult<{ id: string }>> {
   try {
     const { repositories } = getServerDataRepositories();
@@ -100,4 +118,8 @@ export async function reactivateCategoryAction(id: string): Promise<ActionResult
       error: error instanceof Error ? error.message : 'Failed to reactivate category.',
     };
   }
+}
+
+export async function activateCategoryAction(id: string): Promise<ActionResult<{ id: string }>> {
+  return reactivateCategoryAction(id);
 }

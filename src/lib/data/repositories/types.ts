@@ -71,6 +71,7 @@ export interface CategoryRepository {
   getById(id: string): Promise<Category | undefined>;
   create(input: CategoryUpsertInput): Promise<Category>;
   update(id: string, input: CategoryUpsertInput): Promise<Category>;
+  delete(id: string): Promise<void>;
   deactivate(id: string): Promise<void>;
   reactivate(id: string): Promise<void>;
 }

@@ -154,6 +154,7 @@ export function InventoryTable({ initialRows }: InventoryTableProps) {
     {
       id: 'actions',
       header: 'Actions',
+      enableSorting: false,
       cell: ({ row }) => (
         <Button size="sm" variant="outline" onClick={() => openLogs(row.original)}>
           View Logs

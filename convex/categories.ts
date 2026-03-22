@@ -2,6 +2,10 @@ import { v } from 'convex/values';
 
 import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
+import {
+  collectCategoryDeleteIds,
+  hasLinkedProductsInCategoryTree,
+} from '../src/lib/category-delete';
 
 type CategoryRecord = {
   _id: Id<'categories'>;
@@ -211,6 +215,30 @@ export const update = mutation({
     });
 
     return args.id;
+  },
+});
+
+export const remove = mutation({
+  args: { id: v.id('categories') },
+  handler: async (ctx, args: { id: Id<'categories'> }) => {
+    const row = (await ctx.db.get(args.id)) as CategoryRecord | null;
+    if (!row) {
+      throw new Error('Category not found.');
+    }
+
+    const categories = (await ctx.db.query('categories').collect()) as CategoryRecord[];
+    const products = (await ctx.db.query('products').collect()) as Array<{
+      categoryId: Id<'categories'>;
+    }>;
+
+    if (hasLinkedProductsInCategoryTree(categories, products, args.id)) {
+      throw new Error('Cannot delete a category that still has products assigned. Reassign products first.');
+    }
+
+    const ids = collectCategoryDeleteIds(categories, args.id);
+    for (const categoryId of ids) {
+      await ctx.db.delete(categoryId as Id<'categories'>);
+    }
   },
 });
 

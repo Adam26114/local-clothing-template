@@ -65,6 +65,7 @@ export function OrdersTable({
     {
       id: 'actions',
       header: 'Actions',
+      enableSorting: false,
       cell: ({ row }) => (
         <Button asChild size="sm" variant="outline">
           <Link href={`/admin/orders/${row.original._id}`}>Manage</Link>

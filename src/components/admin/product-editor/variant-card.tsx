@@ -37,6 +37,9 @@ type VariantCardProps = {
   onUpdate: (updated: ColorVariant) => void;
   onRemove: () => void;
   onCopyMeasurements: (sourceVariantId: string) => void;
+  onUploadStateChange?: (state: { pending: number; failed: number }) => void;
+  onAddImageUrl: (url: string) => void;
+  onRemoveImageUrl: (index: number) => void;
 };
 
 function hasMeasurements(variant: ColorVariant, size: SizeKey): boolean {
@@ -56,6 +59,9 @@ export function VariantCard({
   onUpdate,
   onRemove,
   onCopyMeasurements,
+  onUploadStateChange,
+  onAddImageUrl,
+  onRemoveImageUrl,
 }: VariantCardProps) {
   const handleSizeToggle = useCallback(
     (size: SizeKey) => {
@@ -240,18 +246,9 @@ export function VariantCard({
             <Label>Product images</Label>
             <ImageDropzoneMock
               imageUrls={variant.images}
-              onAddUrl={(url) =>
-                onUpdate({
-                  ...variant,
-                  images: [...variant.images, url],
-                })
-              }
-              onRemoveUrl={(indexToRemove) =>
-                onUpdate({
-                  ...variant,
-                  images: variant.images.filter((_, index) => index !== indexToRemove),
-                })
-              }
+              onAddUrl={onAddImageUrl}
+              onRemoveUrl={onRemoveImageUrl}
+              onUploadStateChange={onUploadStateChange}
             />
           </div>
 

@@ -30,6 +30,9 @@ import {
 } from '@tanstack/react-table';
 import {
   type LucideIcon,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -243,9 +246,9 @@ export function AdminDataTable<TData, TValue>({
   }, [onSelectedRowsChange, rowSelection, table, tableData]);
 
   const sensors = useSensors(
-    useSensor(MouseSensor),
-    useSensor(TouchSensor),
-    useSensor(KeyboardSensor)
+    useSensor(MouseSensor, {}),
+    useSensor(TouchSensor, {}),
+    useSensor(KeyboardSensor, {})
   );
 
   const dataIds = React.useMemo<UniqueIdentifier[]>(() => {
@@ -333,21 +336,35 @@ export function AdminDataTable<TData, TValue>({
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
-              <TableHead key={header.id}>
-                {header.isPlaceholder
-                  ? null
-                  : flexRender(header.column.columnDef.header, header.getContext())}
-              </TableHead>
+                <TableHead key={header.id} aria-sort={getAriaSort(header.column.getIsSorted())}>
+                  {header.isPlaceholder ? null : header.column.getCanSort() ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="-ml-3 h-8 gap-1 px-2 font-medium hover:bg-transparent"
+                      onClick={header.column.getToggleSortingHandler()}
+                    >
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      {getSortIcon(header.column.getIsSorted())}
+                    </Button>
+                  ) : (
+                    flexRender(header.column.columnDef.header, header.getContext())
+                  )}
+                </TableHead>
               ))}
             </TableRow>
           ))}
         </TableHeader>
-        <TableBody>
+        <TableBody className="**:data-[slot=table-cell]:first:w-8">
           {table.getRowModel().rows.length > 0 ? (
-            table.getRowModel().rows.map((row) =>
-              enableRowDrag ? (
-                <DraggableRow key={row.id} row={row} />
-              ) : (
+            enableRowDrag ? (
+              <SortableContext items={dataIds} strategy={verticalListSortingStrategy}>
+                {table.getRowModel().rows.map((row) => (
+                  <DraggableRow key={row.id} row={row} />
+                ))}
+              </SortableContext>
+            ) : (
+              table.getRowModel().rows.map((row) => (
                 <TableRow data-state={row.getIsSelected() ? 'selected' : undefined} key={row.id}>
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
@@ -355,7 +372,7 @@ export function AdminDataTable<TData, TValue>({
                     </TableCell>
                   ))}
                 </TableRow>
-              )
+              ))
             )
           ) : (
             <TableRow>
@@ -377,9 +394,7 @@ export function AdminDataTable<TData, TValue>({
       sensors={sensors}
       id={sortableId}
     >
-      <SortableContext items={dataIds} strategy={verticalListSortingStrategy}>
-        {tableNode}
-      </SortableContext>
+      {tableNode}
     </DndContext>
   ) : (
     tableNode
@@ -528,14 +543,33 @@ function DragHandle({ id }: { id: string }) {
     <Button
       {...attributes}
       {...listeners}
+      type="button"
       variant="ghost"
       size="icon"
-      className="text-muted-foreground size-7 hover:bg-transparent"
+      className="text-muted-foreground size-7 cursor-grab touch-none select-none hover:bg-transparent active:cursor-grabbing"
     >
       <GripVertical className="text-muted-foreground size-3" />
       <span className="sr-only">Drag to reorder</span>
     </Button>
   );
+}
+
+function getSortIcon(sorted: false | 'asc' | 'desc') {
+  if (sorted === 'asc') {
+    return <ArrowUp className="size-4" />;
+  }
+
+  if (sorted === 'desc') {
+    return <ArrowDown className="size-4" />;
+  }
+
+  return <ArrowUpDown className="text-muted-foreground size-4" />;
+}
+
+function getAriaSort(sorted: false | 'asc' | 'desc') {
+  if (sorted === 'asc') return 'ascending';
+  if (sorted === 'desc') return 'descending';
+  return 'none';
 }
 
 function DraggableRow<TData>({ row }: { row: Row<TData> }) {

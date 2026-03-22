@@ -151,6 +151,22 @@ export const bySlug = query({
   },
 });
 
+export const generateUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const resolveImageUrl = query({
+  args: {
+    storageId: v.id('_storage'),
+  },
+  handler: async (ctx, args: { storageId: Id<'_storage'> }) => {
+    return await ctx.storage.getUrl(args.storageId);
+  },
+});
+
 export const create = mutation({
   args: productInputValidator,
   handler: async (ctx, args: ProductInput) => {

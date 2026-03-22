@@ -261,6 +261,7 @@ const refs = {
   categoryById: makeFunctionReference<'query'>('categories:byId'),
   categoryCreate: makeFunctionReference<'mutation'>('categories:create'),
   categoryUpdate: makeFunctionReference<'mutation'>('categories:update'),
+  categoryDelete: makeFunctionReference<'mutation'>('categories:remove'),
   categoryDeactivate: makeFunctionReference<'mutation'>('categories:deactivate'),
   categoryReactivate: makeFunctionReference<'mutation'>('categories:reactivate'),
   settingsGet: makeFunctionReference<'query'>('settings:get'),
@@ -462,6 +463,11 @@ function createCategoryRepository(): CategoryRepository {
         throw new Error('Failed to fetch updated category.');
       }
       return category;
+    },
+
+    async delete(id) {
+      const convex = getConvexClient();
+      await convex.mutation(refs.categoryDelete, { id });
     },
 
     async deactivate(id) {
