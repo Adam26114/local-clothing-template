@@ -18,6 +18,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import type { Category, ColorVariant, Product, SizeKey, VariantMeasurement } from '@/lib/types';
@@ -123,16 +132,16 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       };
     }
 
-    return {
-      _id: 'draft',
-      sku: '',
-      name: '',
-      slug: '',
-      description: '',
-      categoryId: categories[0]?._id ?? '',
-      basePrice: 0,
-      salePrice: undefined,
-      isFeatured: false,
+      return {
+        _id: 'draft',
+        sku: '',
+        name: '',
+        slug: '',
+        description: '',
+        categoryId: '',
+        basePrice: 0,
+        salePrice: undefined,
+        isFeatured: false,
       isPublished: true,
       colorVariants: initialVariants,
       createdAt: Date.now(),
@@ -144,6 +153,20 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
     initialVariants[0]?.id ?? null
   );
   const [tagsInput, setTagsInput] = useState('');
+  const [imageUploadStateByVariant, setImageUploadStateByVariant] = useState<
+    Record<string, { pending: number; failed: number }>
+  >({});
+
+  const imageUploadSummary = useMemo(() => {
+    return Object.values(imageUploadStateByVariant).reduce(
+      (summary, state) => {
+        summary.pending += state.pending;
+        summary.failed += state.failed;
+        return summary;
+      },
+      { pending: 0, failed: 0 }
+    );
+  }, [imageUploadStateByVariant]);
 
   const autoSlug = useMemo(() => {
     const base = form.name.trim() || form.slug.trim() || 'product';
@@ -170,6 +193,11 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       ...prev,
       colorVariants: nextVariants,
     }));
+    setImageUploadStateByVariant((prev) => {
+      const next = { ...prev };
+      delete next[variantId];
+      return next;
+    });
 
     if (expandedVariantId === variantId) {
       setExpandedVariantId(nextVariants[0]?.id ?? null);
@@ -181,6 +209,34 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       ...prev,
       colorVariants: prev.colorVariants.map((variant) =>
         variant.id === nextVariant.id ? nextVariant : variant
+      ),
+    }));
+  };
+
+  const addVariantImage = (variantId: string, url: string) => {
+    setForm((prev) => ({
+      ...prev,
+      colorVariants: prev.colorVariants.map((variant) =>
+        variant.id === variantId
+          ? {
+              ...variant,
+              images: [...variant.images, url],
+            }
+          : variant
+      ),
+    }));
+  };
+
+  const removeVariantImage = (variantId: string, indexToRemove: number) => {
+    setForm((prev) => ({
+      ...prev,
+      colorVariants: prev.colorVariants.map((variant) =>
+        variant.id === variantId
+          ? {
+              ...variant,
+              images: variant.images.filter((_, index) => index !== indexToRemove),
+            }
+          : variant
       ),
     }));
   };
@@ -236,6 +292,16 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       return;
     }
 
+    if (imageUploadSummary.pending > 0) {
+      toast.error('Please wait for all image uploads to finish.');
+      return;
+    }
+
+    if (imageUploadSummary.failed > 0) {
+      toast.error('Fix or remove failed image uploads before saving.');
+      return;
+    }
+
     startTransition(async () => {
       const payload = {
         sku: undefined,
@@ -263,7 +329,7 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       toast.success(mode === 'create' ? 'Product created.' : 'Product updated.');
 
       if (mode === 'create') {
-        router.push(`/admin/products/${result.data._id}/edit`);
+        router.push('/admin/products');
       } else {
         setForm({
           ...result.data,
@@ -305,18 +371,26 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
               Manage categories
             </Link>
           </div>
-          <select
-            className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
-            value={form.categoryId}
-            onChange={(event) => setForm((prev) => ({ ...prev, categoryId: event.target.value }))}
+          <Select
+            value={form.categoryId || undefined}
+            onValueChange={(value) => setForm((prev) => ({ ...prev, categoryId: value }))}
+            disabled={categories.length === 0}
           >
-            {categories.map((category) => (
-              <option key={category._id} value={category._id}>
-                {category.name}
-                {category.isActive ? '' : ' (inactive)'}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={categories.length === 0 ? 'No categories available' : 'Select Category'} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectLabel>Categories</SelectLabel>
+                {categories.map((category) => (
+                  <SelectItem key={category._id} value={category._id}>
+                    {category.name}
+                    {category.isActive ? '' : ' (inactive)'}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-2">
           <Label>Tags</Label>
@@ -330,7 +404,7 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <Label>Base Price (MMK)</Label>
+          <Label>Base Price (ks)</Label>
           <Input
             type="number"
             value={form.basePrice ?? 0}
@@ -344,7 +418,7 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
           />
         </div>
         <div className="space-y-2">
-          <Label>Sale Price (MMK)</Label>
+          <Label>Sale Price (ks)</Label>
           <Input
             type="number"
             value={form.salePrice ?? ''}
@@ -419,6 +493,14 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
               onCopyMeasurements={(sourceVariantId) =>
                 copyVariantMeasurements(variant.id, sourceVariantId)
               }
+              onUploadStateChange={(state) =>
+                setImageUploadStateByVariant((prev) => ({
+                  ...prev,
+                  [variant.id]: state,
+                }))
+              }
+              onAddImageUrl={(url) => addVariantImage(variant.id, url)}
+              onRemoveImageUrl={(index) => removeVariantImage(variant.id, index)}
             />
           ))}
         </div>
@@ -430,7 +512,11 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       </section>
 
       <div className="flex justify-end gap-2">
-        <Button className="bg-black text-white hover:bg-zinc-800" disabled={isPending} onClick={saveProduct}>
+        <Button
+          className="bg-black text-white hover:bg-zinc-800"
+          disabled={isPending || imageUploadSummary.pending > 0 || imageUploadSummary.failed > 0}
+          onClick={saveProduct}
+        >
           {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
           {mode === 'create' ? 'Create Product' : 'Update Product'}
         </Button>

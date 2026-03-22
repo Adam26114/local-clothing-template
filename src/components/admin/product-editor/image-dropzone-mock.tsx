@@ -1,22 +1,32 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ExternalLink, ImagePlus, Link2, Trash2, X } from 'lucide-react';
+import { ImagePlus, Link2, Trash2, X } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { uploadProductImage } from '@/lib/product-image-storage';
 import { cn } from '@/lib/utils';
 
 type MockImagePreview = {
   id: string;
   name: string;
   previewUrl: string;
+  file: File;
+  status: 'uploading' | 'error';
+  errorMessage?: string;
+};
+
+type UploadState = {
+  pending: number;
+  failed: number;
 };
 
 type ImageDropzoneMockProps = {
   imageUrls: string[];
   onAddUrl: (url: string) => void;
   onRemoveUrl: (index: number) => void;
+  onUploadStateChange?: (state: UploadState) => void;
 };
 
 function createPreviewId() {
@@ -27,9 +37,25 @@ function createPreviewId() {
   return `preview-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function ImageDropzoneMock({ imageUrls, onAddUrl, onRemoveUrl }: ImageDropzoneMockProps) {
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Failed to upload image.';
+}
+
+export function ImageDropzoneMock({
+  imageUrls,
+  onAddUrl,
+  onRemoveUrl,
+  onUploadStateChange,
+}: ImageDropzoneMockProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
   const previewsRef = useRef<MockImagePreview[]>([]);
+  const removedIdsRef = useRef<Set<string>>(new Set());
+  const uploadStateCallbackRef = useRef<ImageDropzoneMockProps['onUploadStateChange']>(undefined);
   const [mockPreviews, setMockPreviews] = useState<MockImagePreview[]>([]);
   const [urlInput, setUrlInput] = useState('');
 
@@ -38,25 +64,90 @@ export function ImageDropzoneMock({ imageUrls, onAddUrl, onRemoveUrl }: ImageDro
   }, [mockPreviews]);
 
   useEffect(() => {
+    uploadStateCallbackRef.current = onUploadStateChange;
+  }, [onUploadStateChange]);
+
+  useEffect(() => {
+    uploadStateCallbackRef.current?.({
+      pending: mockPreviews.filter((preview) => preview.status === 'uploading').length,
+      failed: mockPreviews.filter((preview) => preview.status === 'error').length,
+    });
+  }, [mockPreviews]);
+
+  useEffect(() => {
     return () => {
+      isMountedRef.current = false;
       for (const preview of previewsRef.current) {
         URL.revokeObjectURL(preview.previewUrl);
       }
     };
   }, []);
 
-  const pushFiles = useCallback((files: FileList) => {
-    const entries = Array.from(files)
-      .filter((file) => file.type.startsWith('image/'))
-      .map((file) => ({
-        id: createPreviewId(),
-        name: file.name,
-        previewUrl: URL.createObjectURL(file),
-      }));
+  const removePreview = useCallback((id: string) => {
+    removedIdsRef.current.add(id);
 
-    if (entries.length === 0) return;
-    setMockPreviews((prev) => [...prev, ...entries]);
+    setMockPreviews((prev) => {
+      const current = prev.find((entry) => entry.id === id);
+      if (current) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return prev.filter((entry) => entry.id !== id);
+    });
   }, []);
+
+  const handleFile = useCallback(
+    async (id: string, file: File) => {
+      try {
+        const result = await uploadProductImage(file);
+
+        if (!isMountedRef.current || removedIdsRef.current.has(id)) {
+          return;
+        }
+
+        onAddUrl(result.url);
+        removePreview(id);
+      } catch (error) {
+        if (!isMountedRef.current || removedIdsRef.current.has(id)) {
+          return;
+        }
+
+        setMockPreviews((prev) =>
+          prev.map((entry) =>
+            entry.id === id
+              ? {
+                  ...entry,
+                  status: 'error',
+                  errorMessage: getErrorMessage(error),
+                }
+              : entry
+          )
+        );
+      }
+    },
+    [onAddUrl, removePreview]
+  );
+
+  const pushFiles = useCallback(
+    (files: FileList) => {
+      const entries = Array.from(files)
+        .filter((file) => file.type.startsWith('image/'))
+        .map((file) => ({
+          id: createPreviewId(),
+          name: file.name,
+          previewUrl: URL.createObjectURL(file),
+          file,
+          status: 'uploading' as const,
+        }));
+
+      if (entries.length === 0) return;
+      setMockPreviews((prev) => [...prev, ...entries]);
+
+      for (const entry of entries) {
+        void handleFile(entry.id, entry.file);
+      }
+    },
+    [handleFile]
+  );
 
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLButtonElement>) => {
@@ -108,7 +199,8 @@ export function ImageDropzoneMock({ imageUrls, onAddUrl, onRemoveUrl }: ImageDro
       />
 
       <p className="text-xs text-muted-foreground">
-        Local file drops are preview-only in this step. Add image URLs below to persist on save.
+        Local image files upload to Convex automatically. Add image URLs below to save external
+        images.
       </p>
 
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -133,31 +225,27 @@ export function ImageDropzoneMock({ imageUrls, onAddUrl, onRemoveUrl }: ImageDro
 
       {imageUrls.length > 0 ? (
         <div className="space-y-2 rounded-md border border-border/70 p-3">
-          <p className="text-xs font-medium text-muted-foreground">Saved image URLs</p>
-          <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Saved images</p>
+          <div className="flex flex-wrap gap-2">
             {imageUrls.map((url, index) => (
               <div
                 key={`${url}-${index}`}
-                className="flex items-center gap-2 rounded border border-border/60 bg-muted/20 px-2 py-1.5"
+                className="group relative h-24 w-24 overflow-hidden rounded-md border border-border/60 bg-muted/10 sm:h-28 sm:w-28"
               >
-                <a
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="line-clamp-1 flex-1 text-sm text-foreground hover:underline"
-                >
-                  {url}
-                </a>
-                <ExternalLink className="size-3.5 text-muted-foreground" />
+                <img
+                  src={url}
+                  alt={`Saved product image ${index + 1}`}
+                  className="aspect-square h-full w-full object-cover"
+                />
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="size-7"
+                  className="absolute right-1 top-1 hidden size-6 bg-red-600 text-white shadow-sm hover:bg-red-700 group-hover:flex"
                   onClick={() => onRemoveUrl(index)}
                 >
-                  <Trash2 className="size-4 text-muted-foreground" />
-                  <span className="sr-only">Remove URL</span>
+                  <Trash2 className="size-4 text-white" />
+                  <span className="sr-only">Remove image</span>
                 </Button>
               </div>
             ))}
@@ -167,7 +255,7 @@ export function ImageDropzoneMock({ imageUrls, onAddUrl, onRemoveUrl }: ImageDro
 
       {mockPreviews.length > 0 ? (
         <div className="space-y-2 rounded-md border border-border/70 p-3">
-          <p className="text-xs font-medium text-muted-foreground">Local previews (not persisted)</p>
+          <p className="text-xs font-medium text-muted-foreground">Local previews</p>
           <div className="flex flex-wrap gap-2">
             {mockPreviews.map((preview) => (
               <div
@@ -175,20 +263,20 @@ export function ImageDropzoneMock({ imageUrls, onAddUrl, onRemoveUrl }: ImageDro
                 className="group relative h-20 w-20 overflow-hidden rounded-md border border-border"
               >
                 <img src={preview.previewUrl} alt={preview.name} className="h-full w-full object-cover" />
+                <div
+                  className={cn(
+                    'absolute inset-x-1 bottom-1 rounded px-1.5 py-0.5 text-center text-[10px] font-medium text-white',
+                    preview.status === 'error' ? 'bg-red-500/90' : 'bg-black/60'
+                  )}
+                >
+                  {preview.status === 'uploading' ? 'Uploading' : preview.errorMessage ?? 'Upload failed'}
+                </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setMockPreviews((prev) => {
-                      const current = prev.find((entry) => entry.id === preview.id);
-                      if (current) {
-                        URL.revokeObjectURL(current.previewUrl);
-                      }
-                      return prev.filter((entry) => entry.id !== preview.id);
-                    });
-                  }}
-                  className="absolute right-1 top-1 hidden size-5 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground group-hover:flex"
+                  onClick={() => removePreview(preview.id)}
+                  className="absolute right-1 top-1 hidden size-5 cursor-pointer items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-700 group-hover:flex"
                 >
-                  <X className="size-3" />
+                  <X className="size-3 text-white" />
                   <span className="sr-only">Remove local preview</span>
                 </button>
               </div>

@@ -1,4 +1,5 @@
 import { BRAND } from '@/lib/constants';
+import { collectCategoryDeleteIds, hasLinkedProductsInCategoryTree } from '@/lib/category-delete';
 import {
   categories as seedCategories,
   inventoryAuditLogs as seedInventoryAuditLogs,
@@ -96,20 +97,8 @@ function ensureUniqueCategorySlug(base: string, currentId?: string): string {
 }
 
 function categoryDescendantIds(rootId: string): Set<string> {
-  const descendants = new Set<string>();
-  const queue: string[] = [rootId];
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) continue;
-    const children = state.categories.filter((category) => category.parentId === current);
-    for (const child of children) {
-      if (descendants.has(child._id)) continue;
-      descendants.add(child._id);
-      queue.push(child._id);
-    }
-  }
-
+  const descendants = collectCategoryDeleteIds(state.categories, rootId);
+  descendants.delete(rootId);
   return descendants;
 }
 
@@ -423,6 +412,20 @@ function createCategoryRepository(): CategoryRepository {
       existing.updatedAt = Date.now();
 
       return deepClone(existing);
+    },
+
+    async delete(id) {
+      const existing = state.categories.find((item) => item._id === id);
+      if (!existing) {
+        throw new Error('Category not found.');
+      }
+
+      if (hasLinkedProductsInCategoryTree(state.categories, state.products, id)) {
+        throw new Error('Cannot delete a category that still has products assigned. Reassign products first.');
+      }
+
+      const ids = collectCategoryDeleteIds(state.categories, id);
+      state.categories = state.categories.filter((item) => !ids.has(item._id));
     },
 
     async deactivate(id) {

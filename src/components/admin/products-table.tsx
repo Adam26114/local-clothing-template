@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState, useTransition } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Loader2 } from 'lucide-react';
+import { Loader2, MoreHorizontal, Pencil, Plus, Copy, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
@@ -15,6 +15,14 @@ import {
 import { AdminDataTable, withRowSelection } from '@/components/admin/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { formatMmk } from '@/lib/currency';
 import type { Category, Product } from '@/lib/types';
 
 type ProductsTableProps = {
@@ -28,6 +36,17 @@ function totalStock(product: Product): number {
       sum + Object.values(variant.stock).reduce((stockSum, value) => stockSum + (value ?? 0), 0)
     );
   }, 0);
+}
+
+function getProductThumbnailUrl(product: Product): string | undefined {
+  for (const variant of product.colorVariants) {
+    const firstImage = variant.images.find((image) => image.trim().length > 0);
+    if (firstImage) {
+      return firstImage;
+    }
+  }
+
+  return undefined;
 }
 
 export function ProductsTable({ initialProducts, categories }: ProductsTableProps) {
@@ -94,7 +113,22 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
     {
       id: 'thumbnail',
       header: 'Thumbnail',
-      cell: () => <div className="size-10 rounded bg-zinc-100" />,
+      enableSorting: false,
+      cell: ({ row }) => {
+        const thumbnailUrl = getProductThumbnailUrl(row.original);
+
+        if (!thumbnailUrl) {
+          return <div className="size-10 rounded bg-zinc-100" />;
+        }
+
+        return (
+          <img
+            src={thumbnailUrl}
+            alt={row.original.name}
+            className="size-10 rounded object-cover"
+          />
+        );
+      },
     },
     {
       accessorKey: 'name',
@@ -116,21 +150,24 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
     {
       id: 'category',
       header: 'Category',
+      enableSorting: false,
       cell: ({ row }) => categoryMap.get(row.original.categoryId) ?? 'Unknown',
     },
     {
       accessorKey: 'basePrice',
       header: 'Base Price',
-      cell: ({ row }) => `Ks ${row.original.basePrice ?? 0}`,
+      cell: ({ row }) => formatMmk(row.original.basePrice ?? 0),
     },
     {
       id: 'stockTotal',
       header: 'Stock Total',
+      enableSorting: false,
       cell: ({ row }) => totalStock(row.original),
     },
     {
       id: 'active',
       header: 'Active',
+      enableSorting: false,
       cell: ({ row }) => (
         <Badge variant={row.original.isPublished ? 'default' : 'secondary'}>
           {row.original.isPublished ? 'Active' : 'Inactive'}
@@ -138,62 +175,81 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
       ),
     },
     {
-      id: 'actions',
-      header: 'Actions',
+      id: 'rowMenu',
+      header: () => null,
+      enableSorting: false,
+      enableHiding: false,
       cell: ({ row }) => (
-        <div className="flex flex-wrap gap-2">
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/admin/products/${row.original._id}/edit`}>Update</Link>
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={isPending}
-            onClick={() => {
-              startTransition(async () => {
-                const result = await duplicateProductAction(row.original._id);
-                if (!result.ok) {
-                  toast.error(result.error);
-                  return;
-                }
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              className="flex size-8 text-muted-foreground data-[state=open]:bg-muted"
+              size="icon"
+            >
+              <MoreHorizontal className="size-4" />
+              <span className="sr-only">Open row menu</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-40">
+            <DropdownMenuItem onClick={() => router.push('/admin/products/new')}>
+              <Plus className="size-4" />
+              <span>Create</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push(`/admin/products/${row.original._id}/edit`)}>
+              <Pencil className="size-4" />
+              <span>Update</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={isPending}
+              onClick={() => {
+                startTransition(async () => {
+                  const result = await duplicateProductAction(row.original._id);
+                  if (!result.ok) {
+                    toast.error(result.error);
+                    return;
+                  }
 
-                setRows((prev) => [result.data, ...prev]);
-                toast.success('Product duplicated.');
-              });
-            }}
-          >
-            Duplicate
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={isPending}
-            onClick={() => {
-              startTransition(async () => {
-                const result = await softDeleteProductAction(row.original._id);
-                if (!result.ok) {
-                  toast.error(result.error);
-                  return;
-                }
+                  setRows((prev) => [result.data, ...prev]);
+                  toast.success('Product duplicated.');
+                });
+              }}
+            >
+              <Copy className="size-4" />
+              <span>Duplicate</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              disabled={isPending}
+              onClick={() => {
+                startTransition(async () => {
+                  const result = await softDeleteProductAction(row.original._id);
+                  if (!result.ok) {
+                    toast.error(result.error);
+                    return;
+                  }
 
-                setRows((prev) =>
-                  prev.map((entry) =>
-                    entry._id === row.original._id
-                      ? {
-                          ...entry,
-                          isPublished: false,
-                          updatedAt: Date.now(),
-                        }
-                      : entry
-                  )
-                );
-                toast.success('Product set to inactive.');
-              });
-            }}
-          >
-            Soft Delete
-          </Button>
-        </div>
+                  setRows((prev) =>
+                    prev.map((entry) =>
+                      entry._id === row.original._id
+                        ? {
+                            ...entry,
+                            isPublished: false,
+                            updatedAt: Date.now(),
+                          }
+                        : entry
+                    )
+                  );
+                  toast.success('Product set to inactive.');
+                });
+              }}
+            >
+              <Trash2 className="size-4" />
+              <span>Soft Delete</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       ),
     },
   ];

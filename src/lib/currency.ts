@@ -1,7 +1,5 @@
 export function formatMmk(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'MMK',
+  return `${new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(value)} ks`;
 }
