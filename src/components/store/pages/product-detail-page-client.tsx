@@ -29,7 +29,10 @@ export function ProductDetailPageClient({
 
   const [variantIndex, setVariantIndex] = useState(0);
   const selectedVariant = product?.colorVariants[variantIndex];
-  const firstSize = selectedVariant?.selectedSizes[0] ?? 'M';
+  const firstSize =
+    selectedVariant?.selectedSizes.find((item) => (selectedVariant?.stock[item] ?? 0) > 0) ??
+    selectedVariant?.selectedSizes[0] ??
+    'M';
   const [size, setSize] = useState<SizeKey>(firstSize as SizeKey);
 
   if (!product || !selectedVariant) {
@@ -37,10 +40,16 @@ export function ProductDetailPageClient({
   }
 
   const currentStock = selectedVariant.stock[size] ?? 0;
-  const isOut = currentStock <= 0;
-  const lowStock = currentStock > 0 && currentStock < 5;
+  const isUnavailable = !product.isInStock;
+  const isOut = isUnavailable || currentStock <= 0;
+  const lowStock = !isUnavailable && currentStock > 0 && currentStock < 5;
   const addToCart = () => {
-    if (isOut) {
+    if (isUnavailable) {
+      toast.error('This product is currently unavailable.');
+      return;
+    }
+
+    if (currentStock <= 0) {
       toast.error('Item sold out. Removed from cart.');
       return;
     }
@@ -91,7 +100,11 @@ export function ProductDetailPageClient({
                   title={variant.colorName}
                   onClick={() => {
                     setVariantIndex(index);
-                    setSize((variant.selectedSizes[0] ?? 'M') as SizeKey);
+                    setSize(
+                      (variant.selectedSizes.find((item) => (variant.stock[item] ?? 0) > 0) ??
+                        variant.selectedSizes[0] ??
+                        'M') as SizeKey
+                    );
                   }}
                   className={`size-8 rounded-full border ${variantIndex === index ? 'ring-2 ring-black' : ''}`}
                   style={{ backgroundColor: variant.colorHex }}
@@ -105,7 +118,7 @@ export function ProductDetailPageClient({
             <div className="flex flex-wrap gap-2">
               {selectedVariant.selectedSizes.map((item) => {
                 const stock = selectedVariant.stock[item] ?? 0;
-                const disabled = stock <= 0;
+                const disabled = isUnavailable || stock <= 0;
                 return (
                   <button
                     key={item}
@@ -121,10 +134,13 @@ export function ProductDetailPageClient({
                 );
               })}
             </div>
-            {lowStock ? (
+            {isUnavailable ? (
+              <p className="text-xs text-red-600">Unavailable</p>
+            ) : lowStock ? (
               <p className="text-xs text-orange-600">Low stock: only {currentStock} left</p>
+            ) : isOut ? (
+              <p className="text-xs text-red-600">Out of stock</p>
             ) : null}
-            {isOut ? <p className="text-xs text-red-600">Out of stock</p> : null}
           </div>
 
           <div className="flex gap-2">

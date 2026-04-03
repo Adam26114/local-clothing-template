@@ -12,10 +12,6 @@ export default async function EditProductPage({ params }: { params: Promise<{ id
 
   return (
     <div className="space-y-6 px-4 lg:px-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Edit Product</h1>
-        <p className="text-sm text-zinc-600">Update product details, media, variants, and stock mapping.</p>
-      </div>
       <DataSourceNotice selection={selection} />
       {product ? (
         <ProductEditor

@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Loader2, Plus } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus, TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { createProductAction, updateProductAction } from '@/app/(admin)/admin/products/actions';
@@ -16,8 +16,27 @@ import {
 } from '@/components/admin/product-editor/variant-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogMedia,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import {
   Select,
   SelectContent,
@@ -29,7 +48,14 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import type { Category, ColorVariant, Product, SizeKey, VariantMeasurement } from '@/lib/types';
+import type { Category, ColorVariant, Product, ProductStatus, SizeKey, VariantMeasurement } from '@/lib/types';
+import {
+  deriveProductStatus,
+  PRODUCT_STATUS_DESCRIPTIONS,
+  PRODUCT_STATUS_DOT_CLASSES,
+  PRODUCT_STATUS_LABELS,
+} from '@/lib/product-visibility';
+import { deriveProductInStock } from '@/lib/product-availability';
 
 type ProductEditorProps = {
   mode: 'create' | 'edit';
@@ -83,6 +109,38 @@ function cloneMeasurements(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
+function formatDateTimeLocal(value?: number) {
+  if (!value) return '';
+
+  const date = new Date(value);
+  const pad = (input: number) => String(input).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}`;
+}
+
+function parseDateTimeLocal(value: string) {
+  if (!value) return undefined;
+
+  const [datePart, timePart] = value.split('T');
+  if (!datePart || !timePart) return undefined;
+
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hours, minutes] = timePart.split(':').map(Number);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day) ||
+    !Number.isFinite(hours) ||
+    !Number.isFinite(minutes)
+  ) {
+    return undefined;
+  }
+
+  return new Date(year, month - 1, day, hours, minutes, 0, 0).getTime();
+}
+
 function prepareVariantForEditor(variant: ColorVariant): ColorVariant {
   const selectedSizes = orderSizes(
     variant.selectedSizes.length > 0 ? variant.selectedSizes : (Object.keys(variant.stock) as SizeKey[])
@@ -104,9 +162,29 @@ function prepareVariantForEditor(variant: ColorVariant): ColorVariant {
   });
 }
 
+function getInitialProductInStock(product: Pick<Product, 'colorVariants'> & { isInStock?: boolean }) {
+  return deriveProductInStock({
+    isInStock: product.isInStock,
+    colorVariants: product.colorVariants,
+  });
+}
+
+const STATUS_VALUES = ['draft', 'pending', 'private', 'scheduled', 'published'] as const;
+
+const STATUS_OPTIONS: Array<{
+  value: ProductStatus;
+  label: string;
+  description: string;
+}> = STATUS_VALUES.map((status) => ({
+  value: status,
+  label: PRODUCT_STATUS_LABELS[status],
+  description: PRODUCT_STATUS_DESCRIPTIONS[status],
+}));
+
 export function ProductEditor({ mode, productId, initialProduct, categories }: ProductEditorProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [saveAction, setSaveAction] = useState<'save' | 'publish' | null>(null);
 
   const sourceProduct = useMemo(() => {
     if (mode === 'edit' && initialProduct) {
@@ -124,25 +202,40 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
     return [createFallbackVariant(DEFAULT_VARIANT_ID)];
   }, [sourceProduct]);
 
+  const sourceInStock = sourceProduct?.isInStock;
+  const sourceStatus = sourceProduct ? deriveProductStatus(sourceProduct) : 'draft';
+  const initialInStock = useMemo(() => {
+    return getInitialProductInStock({
+      colorVariants: initialVariants,
+      isInStock: sourceInStock,
+    });
+  }, [initialVariants, sourceInStock]);
+
   const [form, setForm] = useState<Product>(() => {
     if (sourceProduct) {
       return {
         ...sourceProduct,
+        isInStock: initialInStock,
+        status: sourceStatus,
+        publishAt: sourceProduct.publishAt,
         colorVariants: initialVariants,
       };
     }
 
-      return {
-        _id: 'draft',
-        sku: '',
-        name: '',
-        slug: '',
-        description: '',
-        categoryId: '',
-        basePrice: 0,
-        salePrice: undefined,
-        isFeatured: false,
-      isPublished: true,
+    return {
+      _id: 'draft',
+      sku: '',
+      name: '',
+      slug: '',
+      description: '',
+      categoryId: '',
+      basePrice: 0,
+      salePrice: undefined,
+      isFeatured: false,
+      status: 'draft',
+      publishAt: undefined,
+      isPublished: false,
+      isInStock: initialInStock,
       colorVariants: initialVariants,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -156,6 +249,7 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
   const [imageUploadStateByVariant, setImageUploadStateByVariant] = useState<
     Record<string, { pending: number; failed: number }>
   >({});
+  const [stockTurnOffOpen, setStockTurnOffOpen] = useState(false);
 
   const imageUploadSummary = useMemo(() => {
     return Object.values(imageUploadStateByVariant).reduce(
@@ -269,7 +363,21 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
     toast.success('Measurements copied.');
   };
 
-  const saveProduct = () => {
+  const handleInStockChange = (checked: boolean) => {
+    if (checked) {
+      setForm((prev) => ({ ...prev, isInStock: true }));
+      return;
+    }
+
+    setStockTurnOffOpen(true);
+  };
+
+  const confirmTurnOffStock = () => {
+    setForm((prev) => ({ ...prev, isInStock: false }));
+    setStockTurnOffOpen(false);
+  };
+
+  const saveProduct = (options?: { forcePublish?: boolean }) => {
     if (!form.name.trim()) {
       toast.error('Product name is required.');
       return;
@@ -302,225 +410,434 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       return;
     }
 
+    const nextStatus: ProductStatus = options?.forcePublish ? 'published' : form.status;
+    const nextPublishAt = nextStatus === 'scheduled' ? form.publishAt : undefined;
+
+    if (nextStatus === 'scheduled' && !nextPublishAt) {
+      toast.error('Scheduled products need a publish date.');
+      return;
+    }
+
+    setSaveAction(options?.forcePublish ? 'publish' : 'save');
     startTransition(async () => {
-      const payload = {
-        sku: undefined,
-        name: form.name.trim(),
-        slug: autoSlug,
-        description: form.description.trim(),
-        categoryId: form.categoryId,
-        basePrice: Number(form.basePrice) || 0,
-        salePrice: form.salePrice && form.salePrice > 0 ? Number(form.salePrice) : undefined,
-        isFeatured: form.isFeatured,
-        isPublished: form.isPublished,
-        colorVariants: sanitizedVariants,
-      };
+      try {
+        const payload = {
+          sku: undefined,
+          name: form.name.trim(),
+          slug: autoSlug,
+          description: form.description.trim(),
+          categoryId: form.categoryId,
+          basePrice: Number(form.basePrice) || 0,
+          salePrice: form.salePrice && form.salePrice > 0 ? Number(form.salePrice) : undefined,
+          isFeatured: form.isFeatured,
+          status: nextStatus,
+          publishAt: nextPublishAt,
+          isPublished: Boolean(
+            nextStatus === 'published' ||
+              (nextStatus === 'scheduled' && nextPublishAt && nextPublishAt <= Date.now())
+          ),
+          isInStock: form.isInStock,
+          colorVariants: sanitizedVariants,
+        };
 
-      const result =
-        mode === 'create'
-          ? await createProductAction(payload)
-          : await updateProductAction(productId ?? form._id, payload);
+        const result =
+          mode === 'create'
+            ? await createProductAction(payload)
+            : await updateProductAction(productId ?? form._id, payload);
 
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
+        if (!result.ok) {
+          toast.error(result.error);
+          return;
+        }
+
+        toast.success(mode === 'create' ? 'Product created.' : 'Product updated.');
+
+        if (mode === 'create') {
+          router.push('/admin/products');
+        } else {
+          setForm({
+            ...result.data,
+            isInStock: result.data.isInStock,
+            status: result.data.status,
+            publishAt: result.data.publishAt,
+            colorVariants: result.data.colorVariants.map((variant) =>
+              prepareVariantForEditor(variant)
+            ),
+          });
+        }
+        router.refresh();
+      } finally {
+        setSaveAction(null);
       }
-
-      toast.success(mode === 'create' ? 'Product created.' : 'Product updated.');
-
-      if (mode === 'create') {
-        router.push('/admin/products');
-      } else {
-        setForm({
-          ...result.data,
-          colorVariants: result.data.colorVariants.map((variant) => prepareVariantForEditor(variant)),
-        });
-      }
-      router.refresh();
     });
   };
 
+  const isSaving = isPending || imageUploadSummary.pending > 0 || imageUploadSummary.failed > 0;
+
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label>Name</Label>
-          <Input
-            value={form.name}
-            onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Slug</Label>
-          <Input
-            value={autoSlug}
-            readOnly
-            className="bg-muted/40 text-muted-foreground"
-          />
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <Label>Categories</Label>
-            <Link
-              href="/admin/categories"
-              className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Manage categories
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <Button asChild variant="outline" size="icon" className="shrink-0">
+            <Link href="/admin/products">
+              <ArrowLeft className="size-4" />
+              <span className="sr-only">Back to products</span>
             </Link>
+          </Button>
+          <div className="space-y-1">
+            <h1 className="text-3xl font-semibold tracking-tight">
+              {mode === 'create' ? 'Add Product' : 'Edit Product'}
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {mode === 'create'
+                ? 'Create a new item with variants, stock, and pricing.'
+                : 'Update product details, media, variants, and stock mapping.'}
+            </p>
           </div>
-          <Select
-            value={form.categoryId || undefined}
-            onValueChange={(value) => setForm((prev) => ({ ...prev, categoryId: value }))}
-            disabled={categories.length === 0}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => router.push('/admin/products')}
+            disabled={isSaving}
           >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder={categories.length === 0 ? 'No categories available' : 'Select Category'} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectLabel>Categories</SelectLabel>
-                {categories.map((category) => (
-                  <SelectItem key={category._id} value={category._id}>
-                    {category.name}
-                    {category.isActive ? '' : ' (inactive)'}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Tags</Label>
-          <Input
-            value={tagsInput}
-            onChange={(event) => setTagsInput(event.target.value)}
-            placeholder="cloth, anime, soft"
-          />
+            Discard
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => saveProduct()}
+            disabled={isSaving}
+          >
+            {saveAction === 'save' ? <Loader2 className="size-4 animate-spin" /> : null}
+            Save Changes
+          </Button>
+          <Button
+            type="button"
+            className="bg-black text-white hover:bg-zinc-800"
+            onClick={() => saveProduct({ forcePublish: true })}
+            disabled={isSaving}
+          >
+            {saveAction === 'publish' ? <Loader2 className="size-4 animate-spin" /> : null}
+            Publish Now
+          </Button>
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label>Base Price (ks)</Label>
-          <Input
-            type="number"
-            value={form.basePrice ?? 0}
-            onChange={(event) => {
-              const raw = Number(event.target.value);
-              setForm((prev) => ({
-                ...prev,
-                basePrice: Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0,
-              }));
-            }}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Sale Price (ks)</Label>
-          <Input
-            type="number"
-            value={form.salePrice ?? ''}
-            onChange={(event) => {
-              const raw = event.target.value;
-              if (!raw) {
-                setForm((prev) => ({ ...prev, salePrice: undefined }));
-                return;
-              }
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_364px] xl:items-start">
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Product Details</CardTitle>
+              <CardDescription>Core product identity and description.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="product-name">Name</Label>
+                <Input
+                  id="product-name"
+                  value={form.name}
+                  onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+                />
+              </div>
 
-              const parsed = Number(raw);
-              setForm((prev) => ({
-                ...prev,
-                salePrice: Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined,
-              }));
-            }}
-          />
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="product-sku">SKU</Label>
+                  <Input
+                    id="product-sku"
+                    value={form.sku}
+                    onChange={(event) => setForm((prev) => ({ ...prev, sku: event.target.value }))}
+                    placeholder="e.g. HNLY-001"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="product-slug">Slug</Label>
+                  <Input
+                    id="product-slug"
+                    value={autoSlug}
+                    readOnly
+                    className="bg-muted/40 text-muted-foreground"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="product-tags">Tags</Label>
+                <Input
+                  id="product-tags"
+                  value={tagsInput}
+                  onChange={(event) => setTagsInput(event.target.value)}
+                  placeholder="cloth, anime, soft"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="product-description">Description</Label>
+                <Textarea
+                  id="product-description"
+                  rows={5}
+                  value={form.description}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, description: event.target.value }))
+                  }
+                  placeholder="Write product description..."
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <section className="space-y-4 rounded-lg border p-4">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Color Variants
+              </h2>
+              <Badge variant="secondary">{form.colorVariants.length}</Badge>
+            </div>
+
+            <div className="space-y-3">
+              {form.colorVariants.map((variant, index) => (
+                <VariantCard
+                  key={variant.id}
+                  variant={variant}
+                  index={index}
+                  isOpen={expandedVariantId === variant.id}
+                  canRemove={form.colorVariants.length > 1}
+                  copySourceVariants={form.colorVariants
+                    .filter((entry) => entry.id !== variant.id && hasAnyMeasurements(entry))
+                    .map((entry) => ({ id: entry.id, colorName: entry.colorName }))}
+                  onToggleOpen={() =>
+                    setExpandedVariantId((prev) => (prev === variant.id ? null : variant.id))
+                  }
+                  onUpdate={updateVariant}
+                  onRemove={() => removeVariant(variant.id)}
+                  onCopyMeasurements={(sourceVariantId) =>
+                    copyVariantMeasurements(variant.id, sourceVariantId)
+                  }
+                  onUploadStateChange={(state) =>
+                    setImageUploadStateByVariant((prev) => ({
+                      ...prev,
+                      [variant.id]: state,
+                    }))
+                  }
+                  onAddImageUrl={(url) => addVariantImage(variant.id, url)}
+                  onRemoveImageUrl={(index) => removeVariantImage(variant.id, index)}
+                />
+              ))}
+            </div>
+
+            <Button type="button" variant="outline" className="w-full border-dashed" onClick={addVariant}>
+              <Plus className="size-4" />
+              Add Color Variant
+            </Button>
+          </section>
+
+        </div>
+
+        <div className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+          <Card>
+            <CardHeader className="gap-2 pb-0">
+              <CardTitle>Pricing</CardTitle>
+              <CardDescription>Base and sale pricing for this product.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="product-base-price">Base Price (ks)</Label>
+                  <Input
+                    id="product-base-price"
+                    type="number"
+                    value={form.basePrice ?? 0}
+                    onChange={(event) => {
+                      const raw = Number(event.target.value);
+                      setForm((prev) => ({
+                        ...prev,
+                        basePrice: Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0,
+                      }));
+                    }}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="product-sale-price">Sale Price (ks)</Label>
+                  <Input
+                    id="product-sale-price"
+                    type="number"
+                    value={form.salePrice ?? ''}
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      if (!raw) {
+                        setForm((prev) => ({ ...prev, salePrice: undefined }));
+                        return;
+                      }
+
+                      const parsed = Number(raw);
+                      setForm((prev) => ({
+                        ...prev,
+                        salePrice: Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : undefined,
+                      }));
+                    }}
+                  />
+                </div>
+                <Separator />
+
+                <label className="flex items-center gap-3 text-sm">
+                  <Switch checked={form.isInStock} onCheckedChange={handleInStockChange} />
+                  In stock
+                </label>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Status</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-2">
+                <Select
+                  value={form.status}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      status: value as ProductStatus,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-full">
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`size-2 rounded-full ${PRODUCT_STATUS_DOT_CLASSES[form.status]}`}
+                      />
+                      <span>{PRODUCT_STATUS_LABELS[form.status]}</span>
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent className="w-[320px]" align="start">
+                    {STATUS_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        <div className="flex items-start gap-2">
+                          <span
+                            className={`mt-1 size-2 rounded-full ${PRODUCT_STATUS_DOT_CLASSES[option.value]}`}
+                          />
+                          <div className="space-y-0.5">
+                            <div className="font-medium">{option.label}</div>
+                            <div className="text-xs text-muted-foreground">{option.description}</div>
+                          </div>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">Set the product status.</p>
+              </div>
+
+              {form.status === 'scheduled' ? (
+                <div className="grid gap-2">
+                  <Label htmlFor="product-publish-at">Publish date</Label>
+                  <Input
+                    id="product-publish-at"
+                    type="datetime-local"
+                    value={formatDateTimeLocal(form.publishAt)}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, publishAt: parseDateTimeLocal(event.target.value) }))
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Scheduled products will go live automatically at this time.
+                  </p>
+                </div>
+              ) : null}
+
+              <Separator />
+
+              <label className="flex items-center gap-3 text-sm">
+                <Switch
+                  checked={form.isFeatured}
+                  onCheckedChange={(checked) =>
+                    setForm((prev) => ({ ...prev, isFeatured: checked }))
+                  }
+                />
+                Featured
+              </label>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle>Categories</CardTitle>
+                  <CardDescription>Choose where this product lives.</CardDescription>
+                </div>
+                <Link
+                  href="/admin/categories"
+                  className="text-xs font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                >
+                  Manage categories
+                </Link>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Select
+                value={form.categoryId || undefined}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, categoryId: value }))}
+                disabled={categories.length === 0}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue
+                    placeholder={categories.length === 0 ? 'No categories available' : 'Select Category'}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>Categories</SelectLabel>
+                    {categories.map((category) => (
+                      <SelectItem key={category._id} value={category._id}>
+                        {category.name}
+                        {category.isActive ? '' : ' (inactive)'}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
-      <div className="space-y-2">
-        <Label>Description</Label>
-        <Textarea
-          rows={5}
-          value={form.description}
-          onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
-          placeholder="Write product description..."
-        />
-      </div>
+      <AlertDialog
+        open={stockTurnOffOpen}
+        onOpenChange={(open) => {
+          setStockTurnOffOpen(open);
+        }}
+      >
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogMedia className="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+              <TriangleAlert className="size-8" />
+            </AlertDialogMedia>
+            <AlertDialogTitle>Turn off in stock?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will hide the product from storefront availability, but it will not change any
+              variant or size quantities. You can turn it back on later.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={(event) => {
+                event.preventDefault();
+                confirmTurnOffStock();
+              }}
+            >
+              Turn off
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      <div className="flex flex-wrap gap-6">
-        <label className="flex items-center gap-2 text-sm">
-          <Switch
-            checked={form.isPublished}
-            onCheckedChange={(checked) => setForm((prev) => ({ ...prev, isPublished: checked }))}
-          />
-          Published
-        </label>
-        <label className="flex items-center gap-2 text-sm">
-          <Switch
-            checked={form.isFeatured}
-            onCheckedChange={(checked) => setForm((prev) => ({ ...prev, isFeatured: checked }))}
-          />
-          Featured
-        </label>
-      </div>
-
-      <section className="space-y-4 rounded-lg border p-4">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Color Variants
-          </h2>
-          <Badge variant="secondary">{form.colorVariants.length}</Badge>
-        </div>
-
-        <div className="space-y-3">
-          {form.colorVariants.map((variant, index) => (
-            <VariantCard
-              key={variant.id}
-              variant={variant}
-              index={index}
-              isOpen={expandedVariantId === variant.id}
-              canRemove={form.colorVariants.length > 1}
-              copySourceVariants={form.colorVariants
-                .filter((entry) => entry.id !== variant.id && hasAnyMeasurements(entry))
-                .map((entry) => ({ id: entry.id, colorName: entry.colorName }))}
-              onToggleOpen={() =>
-                setExpandedVariantId((prev) => (prev === variant.id ? null : variant.id))
-              }
-              onUpdate={updateVariant}
-              onRemove={() => removeVariant(variant.id)}
-              onCopyMeasurements={(sourceVariantId) =>
-                copyVariantMeasurements(variant.id, sourceVariantId)
-              }
-              onUploadStateChange={(state) =>
-                setImageUploadStateByVariant((prev) => ({
-                  ...prev,
-                  [variant.id]: state,
-                }))
-              }
-              onAddImageUrl={(url) => addVariantImage(variant.id, url)}
-              onRemoveImageUrl={(index) => removeVariantImage(variant.id, index)}
-            />
-          ))}
-        </div>
-
-        <Button type="button" variant="outline" className="w-full border-dashed" onClick={addVariant}>
-          <Plus className="size-4" />
-          Add Color Variant
-        </Button>
-      </section>
-
-      <div className="flex justify-end gap-2">
-        <Button
-          className="bg-black text-white hover:bg-zinc-800"
-          disabled={isPending || imageUploadSummary.pending > 0 || imageUploadSummary.failed > 0}
-          onClick={saveProduct}
-        >
-          {isPending ? <Loader2 className="size-4 animate-spin" /> : null}
-          {mode === 'create' ? 'Create Product' : 'Update Product'}
-        </Button>
-      </div>
     </div>
   );
 }

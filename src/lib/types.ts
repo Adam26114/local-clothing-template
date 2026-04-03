@@ -6,6 +6,8 @@ export type PaymentMethod = 'cod';
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export type SizeKey = 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL';
+export const PRODUCT_STATUSES = ['draft', 'pending', 'private', 'scheduled', 'published'] as const;
+export type ProductStatus = (typeof PRODUCT_STATUSES)[number];
 
 export type VariantMeasurement = {
   shoulder?: number;
@@ -58,7 +60,10 @@ export type Product = {
   basePrice?: number;
   salePrice?: number;
   isFeatured: boolean;
+  status: ProductStatus;
+  publishAt?: number;
   isPublished: boolean;
+  isInStock: boolean;
   colorVariants: ColorVariant[];
   createdAt: number;
   updatedAt: number;

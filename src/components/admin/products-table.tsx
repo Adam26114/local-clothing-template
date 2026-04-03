@@ -24,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { formatMmk } from '@/lib/currency';
+import { PRODUCT_STATUS_LABELS } from '@/lib/product-visibility';
 import type { Category, Product } from '@/lib/types';
 
 type ProductsTableProps = {
@@ -133,6 +134,8 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
           selectedIds.includes(entry._id)
             ? {
                 ...entry,
+                status: isPublished ? 'published' : 'draft',
+                publishAt: undefined,
                 isPublished,
                 updatedAt: Date.now(),
               }
@@ -204,10 +207,10 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
     {
       id: 'active',
       header: 'Status',
-      accessorFn: (row) => (row.isPublished ? 'Active' : 'Inactive'),
+      accessorFn: (row) => PRODUCT_STATUS_LABELS[row.status],
       cell: ({ row }) => (
         <Badge variant={row.original.isPublished ? 'default' : 'secondary'}>
-          {row.original.isPublished ? 'Active' : 'Inactive'}
+          {PRODUCT_STATUS_LABELS[row.original.status]}
         </Badge>
       ),
     },
@@ -273,6 +276,8 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
                         entry._id === row.original._id
                           ? {
                               ...entry,
+                              status: 'draft',
+                              publishAt: undefined,
                               isPublished: false,
                               updatedAt: Date.now(),
                             }

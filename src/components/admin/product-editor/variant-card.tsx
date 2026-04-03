@@ -242,15 +242,12 @@ export function VariantCard({
 
           <Separator />
 
-          <div className="space-y-2">
-            <Label>Product images</Label>
-            <ImageDropzoneMock
-              imageUrls={variant.images}
-              onAddUrl={onAddImageUrl}
-              onRemoveUrl={onRemoveImageUrl}
-              onUploadStateChange={onUploadStateChange}
-            />
-          </div>
+          <ImageDropzoneMock
+            imageUrls={variant.images}
+            onAddUrl={onAddImageUrl}
+            onRemoveUrl={onRemoveImageUrl}
+            onUploadStateChange={onUploadStateChange}
+          />
 
           <Separator />
 
