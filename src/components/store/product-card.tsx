@@ -10,9 +10,18 @@ import { Product } from '@/lib/types';
 export function ProductCard({ product }: { product: Product }) {
   const { addItem } = useCart();
   const variant = product.colorVariants[0];
-  const size = variant.selectedSizes[0] ?? 'M';
+  const size =
+    variant.selectedSizes.find((entry) => (variant.stock[entry] ?? 0) > 0) ??
+    variant.selectedSizes[0] ??
+    'M';
+  const canQuickAdd = product.isInStock && (variant.stock[size] ?? 0) > 0;
 
   const handleQuickAdd = () => {
+    if (!canQuickAdd) {
+      toast.error('This product is unavailable.');
+      return;
+    }
+
     addItem({
       productId: product._id,
       colorVariantId: variant.id,
@@ -44,7 +53,8 @@ export function ProductCard({ product }: { product: Product }) {
         <button
           type="button"
           onClick={handleQuickAdd}
-          className="w-full rounded bg-black px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800"
+          disabled={!canQuickAdd}
+          className="w-full rounded bg-black px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
           Quick Add
         </button>

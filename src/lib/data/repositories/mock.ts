@@ -34,6 +34,11 @@ import type {
   SettingsRepository,
   UsersRepository,
 } from '@/lib/data/repositories/types';
+import {
+  deriveProductStatus,
+  isProductVisible,
+  normalizeProductStatus,
+} from '@/lib/product-visibility';
 
 function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -130,7 +135,7 @@ function categoryChildrenIds(parentId: string): string[] {
 }
 
 function publishedProducts(): Product[] {
-  return state.products.filter((item) => item.isPublished);
+  return state.products.filter((item) => isProductVisible(item));
 }
 
 function filterByCategorySlug(categorySlug: string, products: Product[]): Product[] {
@@ -181,7 +186,7 @@ function findInventoryRow(productId: string, variantId: string, size: SizeKey): 
     colorName: variant.colorName,
     size,
     stock: variant.stock[size] ?? 0,
-    isPublished: product.isPublished,
+    isPublished: isProductVisible(product),
   };
 }
 
@@ -232,7 +237,7 @@ function createProductRepository(): ProductRepository {
       const publishedOnly = options?.publishedOnly ?? true;
       const product = state.products.find((item) => {
         if (item.slug !== slug) return false;
-        if (publishedOnly) return item.isPublished;
+        if (publishedOnly) return isProductVisible(item);
         return true;
       });
 
@@ -241,8 +246,15 @@ function createProductRepository(): ProductRepository {
 
     async create(input) {
       const now = Date.now();
+      const status = normalizeProductStatus(input.status, deriveProductStatus(input));
+      const publishAt = status === 'scheduled' ? input.publishAt : undefined;
+      if (status === 'scheduled' && typeof publishAt !== 'number') {
+        throw new Error('Scheduled products require a publish date.');
+      }
       const product: Product = {
         ...input,
+        status,
+        publishAt,
         _id: `prod-${randomSuffix()}`,
         slug: ensureUniqueSlug(input.slug || input.name),
         colorVariants: input.colorVariants.map((variant) => ({
@@ -253,6 +265,8 @@ function createProductRepository(): ProductRepository {
         createdAt: now,
         updatedAt: now,
       };
+
+      product.isPublished = isProductVisible(product, now);
 
       state.products.unshift(product);
       return deepClone(product);
@@ -265,9 +279,16 @@ function createProductRepository(): ProductRepository {
       }
 
       const existing = state.products[index];
+      const status = normalizeProductStatus(input.status, deriveProductStatus(input));
+      const publishAt = status === 'scheduled' ? input.publishAt : undefined;
+      if (status === 'scheduled' && typeof publishAt !== 'number') {
+        throw new Error('Scheduled products require a publish date.');
+      }
       const updated: Product = {
         ...existing,
         ...input,
+        status,
+        publishAt,
         _id: id,
         slug: ensureUniqueSlug(input.slug || input.name || existing.name, id),
         colorVariants: input.colorVariants.map((variant) => ({
@@ -278,6 +299,8 @@ function createProductRepository(): ProductRepository {
         updatedAt: Date.now(),
       };
 
+      updated.isPublished = isProductVisible(updated);
+
       state.products[index] = updated;
       return deepClone(updated);
     },
@@ -285,6 +308,8 @@ function createProductRepository(): ProductRepository {
     async softDelete(id) {
       const product = state.products.find((item) => item._id === id);
       if (!product) return;
+      product.status = 'draft';
+      product.publishAt = undefined;
       product.isPublished = false;
       product.updatedAt = Date.now();
     },
@@ -302,6 +327,9 @@ function createProductRepository(): ProductRepository {
         name: `${original.name} (Copy)`,
         slug: ensureUniqueSlug(`${original.slug}-copy`),
         sku: original.sku ? `${original.sku}-COPY` : undefined,
+        status: 'draft',
+        publishAt: undefined,
+        isPublished: false,
         colorVariants: original.colorVariants.map((variant) => ({
           ...deepClone(variant),
           id: `${variant.id}-copy-${randomSuffix()}`,
@@ -320,6 +348,8 @@ function createProductRepository(): ProductRepository {
 
       for (const product of state.products) {
         if (!idSet.has(product._id)) continue;
+        product.status = isPublished ? 'published' : 'draft';
+        product.publishAt = undefined;
         product.isPublished = isPublished;
         product.updatedAt = Date.now();
         updated += 1;
@@ -495,7 +525,7 @@ function createInventoryRepository(): InventoryRepository {
               colorName: variant.colorName,
               size,
               stock: variant.stock[size] ?? 0,
-              isPublished: product.isPublished,
+              isPublished: isProductVisible(product),
             });
           }
         }
@@ -632,7 +662,7 @@ function createDashboardRepository(): DashboardRepository {
         .filter((order) => order.status !== 'cancelled')
         .reduce((sum, order) => sum + order.total, 0);
       const pendingOrders = state.orders.filter((order) => order.status === 'pending').length;
-      const activeProducts = state.products.filter((product) => product.isPublished).length;
+      const activeProducts = state.products.filter((product) => isProductVisible(product)).length;
       const activeAccounts = state.users.filter((user) => user.isActive).length;
 
       return {

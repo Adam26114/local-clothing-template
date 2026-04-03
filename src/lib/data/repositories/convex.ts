@@ -29,6 +29,12 @@ import type {
   SettingsRepository,
   UsersRepository,
 } from '@/lib/data/repositories/types';
+import { deriveProductInStock } from '@/lib/product-availability';
+import {
+  deriveProductStatus,
+  isProductVisible,
+  normalizeProductStatus,
+} from '@/lib/product-visibility';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -116,6 +122,22 @@ function toCategory(input: UnknownRecord): Category {
 
 function toProduct(input: UnknownRecord): Product {
   const colorVariantsRaw = Array.isArray(input.colorVariants) ? input.colorVariants : [];
+  const colorVariants = colorVariantsRaw
+    .filter((entry): entry is UnknownRecord => Boolean(entry) && typeof entry === 'object')
+    .map((variant) => ({
+      id: String(variant.id ?? ''),
+      colorName: String(variant.colorName ?? ''),
+      colorHex: String(variant.colorHex ?? '#000000'),
+      images: toStringArray(variant.images),
+      selectedSizes: toStringArray(variant.selectedSizes) as SizeKey[],
+      stock: toStockRecord(variant.stock),
+      measurements: toMeasurementMap(variant.measurements),
+    }));
+  const status = normalizeProductStatus(
+    input.status,
+    deriveProductStatus({ status: input.status, isPublished: toBoolean(input.isPublished) })
+  );
+  const publishAt = status === 'scheduled' ? toNumberOrUndefined(input.publishAt) : undefined;
 
   return {
     _id: String(input._id),
@@ -127,18 +149,20 @@ function toProduct(input: UnknownRecord): Product {
     basePrice: toNumberOrUndefined(input.basePrice),
     salePrice: toNumberOrUndefined(input.salePrice),
     isFeatured: toBoolean(input.isFeatured),
-    isPublished: toBoolean(input.isPublished),
-    colorVariants: colorVariantsRaw
-      .filter((entry): entry is UnknownRecord => Boolean(entry) && typeof entry === 'object')
-      .map((variant) => ({
-        id: String(variant.id ?? ''),
-        colorName: String(variant.colorName ?? ''),
-        colorHex: String(variant.colorHex ?? '#000000'),
-        images: toStringArray(variant.images),
-        selectedSizes: toStringArray(variant.selectedSizes) as SizeKey[],
-        stock: toStockRecord(variant.stock),
-        measurements: toMeasurementMap(variant.measurements),
-      })),
+    status,
+    publishAt,
+    isPublished: isProductVisible({
+      status,
+      publishAt,
+      isPublished: toBoolean(input.isPublished),
+    }),
+    isInStock:
+      typeof input.isInStock === 'boolean'
+        ? input.isInStock
+        : deriveProductInStock({
+            colorVariants,
+          }),
+    colorVariants,
     createdAt: Number(input.createdAt ?? 0),
     updatedAt: Number(input.updatedAt ?? 0),
   };
@@ -292,7 +316,8 @@ async function listCategories() {
 async function listProducts(publishedOnly?: boolean) {
   const convex = getConvexClient();
   const rows = (await convex.query(refs.productsList, { publishedOnly })) as UnknownRecord[];
-  return rows.map(toProduct);
+  const products = rows.map(toProduct);
+  return publishedOnly === false ? products : products.filter((product) => isProductVisible(product));
 }
 
 function filterByCategorySlug(

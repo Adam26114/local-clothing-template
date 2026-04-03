@@ -2,6 +2,11 @@ import { v } from 'convex/values';
 
 import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
+import {
+  deriveProductStatus,
+  isProductVisible,
+  normalizeProductStatus,
+} from '../src/lib/product-visibility';
 
 type ProductVariant = {
   id: string;
@@ -31,7 +36,10 @@ type ProductInput = {
   basePrice?: number;
   salePrice?: number;
   isFeatured: boolean;
+  status: 'draft' | 'pending' | 'private' | 'scheduled' | 'published';
+  publishAt?: number;
   isPublished: boolean;
+  isInStock: boolean;
   colorVariants: ProductVariant[];
 };
 
@@ -61,6 +69,13 @@ const colorVariantValidator = v.object({
   stock: v.record(v.string(), v.number()),
   measurements: v.optional(measurementRecord),
 });
+const productStatus = v.union(
+  v.literal('draft'),
+  v.literal('pending'),
+  v.literal('private'),
+  v.literal('scheduled'),
+  v.literal('published')
+);
 
 const productInputValidator = {
   sku: v.optional(v.string()),
@@ -71,7 +86,10 @@ const productInputValidator = {
   basePrice: v.optional(v.number()),
   salePrice: v.optional(v.number()),
   isFeatured: v.boolean(),
+  status: productStatus,
+  publishAt: v.optional(v.number()),
   isPublished: v.boolean(),
+  isInStock: v.boolean(),
   colorVariants: v.array(colorVariantValidator),
 } as const;
 
@@ -119,7 +137,9 @@ export const list = query({
   },
   handler: async (ctx, args: { publishedOnly?: boolean }) => {
     const rows = (await ctx.db.query('products').collect()) as ProductRecord[];
-    const filtered = args.publishedOnly ? rows.filter((row) => row.isPublished) : rows;
+    const filtered = args.publishedOnly
+      ? rows.filter((row) => isProductVisible(row))
+      : rows;
     return filtered.sort((a, b) => b.updatedAt - a.updatedAt);
   },
 });
@@ -143,7 +163,7 @@ export const bySlug = query({
       .first()) as ProductRecord | null;
 
     if (!product) return null;
-    if (args.publishedOnly !== false && !product.isPublished) {
+    if (args.publishedOnly !== false && !isProductVisible(product)) {
       return null;
     }
 
@@ -172,9 +192,18 @@ export const create = mutation({
   handler: async (ctx, args: ProductInput) => {
     const now = Date.now();
     const slug = await ensureUniqueSlug(ctx, args.slug);
+    const status = normalizeProductStatus(args.status, deriveProductStatus(args));
+    const publishAt = status === 'scheduled' ? args.publishAt : undefined;
+    if (status === 'scheduled' && typeof publishAt !== 'number') {
+      throw new Error('Scheduled products require a publish date.');
+    }
+    const isPublished = isProductVisible({ status, publishAt });
 
     return await ctx.db.insert('products', {
       ...args,
+      status,
+      publishAt,
+      isPublished,
       slug,
       createdAt: now,
       updatedAt: now,
@@ -195,9 +224,18 @@ export const update = mutation({
     }
 
     const slug = await ensureUniqueSlug(ctx, changes.slug, id);
+    const status = normalizeProductStatus(changes.status, deriveProductStatus(changes));
+    const publishAt = status === 'scheduled' ? changes.publishAt : undefined;
+    if (status === 'scheduled' && typeof publishAt !== 'number') {
+      throw new Error('Scheduled products require a publish date.');
+    }
+    const isPublished = isProductVisible({ status, publishAt });
 
     await ctx.db.patch(id, {
       ...changes,
+      status,
+      publishAt,
+      isPublished,
       slug,
       updatedAt: Date.now(),
     });
@@ -211,7 +249,12 @@ export const softDelete = mutation({
     const existing = (await ctx.db.get(args.id)) as ProductRecord | null;
     if (!existing) return args.id;
 
-    await ctx.db.patch(args.id, { isPublished: false, updatedAt: Date.now() });
+    await ctx.db.patch(args.id, {
+      status: 'draft',
+      publishAt: undefined,
+      isPublished: false,
+      updatedAt: Date.now(),
+    });
     return args.id;
   },
 });
@@ -236,7 +279,10 @@ export const duplicate = mutation({
       basePrice: source.basePrice,
       salePrice: source.salePrice,
       isFeatured: source.isFeatured,
+      status: 'draft',
+      publishAt: undefined,
       isPublished: false,
+      isInStock: source.isInStock,
       colorVariants: source.colorVariants.map((variant) => ({
         ...variant,
         id: `${variant.id}-copy-${randomSuffix()}`,
@@ -259,6 +305,8 @@ export const toggleBulkStatus = mutation({
       const row = (await ctx.db.get(id)) as ProductRecord | null;
       if (!row) continue;
       await ctx.db.patch(id, {
+        status: args.isPublished ? 'published' : 'draft',
+        publishAt: undefined,
         isPublished: args.isPublished,
         updatedAt: Date.now(),
       });

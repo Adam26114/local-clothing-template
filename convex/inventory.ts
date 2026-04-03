@@ -2,6 +2,7 @@ import { v } from 'convex/values';
 
 import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
+import { isProductVisible } from '../src/lib/product-visibility';
 
 type ProductVariant = {
   id: string;
@@ -15,6 +16,8 @@ type ProductVariant = {
 type ProductRecord = {
   _id: Id<'products'>;
   name: string;
+  status?: string;
+  publishAt?: number;
   isPublished: boolean;
   colorVariants: ProductVariant[];
 };
@@ -65,7 +68,7 @@ export const listFlattened = query({
           colorName: variant.colorName,
           size,
           stock: variant.stock[size] ?? 0,
-          isPublished: product.isPublished,
+          isPublished: isProductVisible(product),
         }))
       )
     );
@@ -145,7 +148,7 @@ export const updateStockWithAudit = mutation({
         colorName: variant.colorName,
         size: args.size,
         stock: normalizedValue,
-        isPublished: product.isPublished,
+          isPublished: isProductVisible(product),
       },
       log,
     };

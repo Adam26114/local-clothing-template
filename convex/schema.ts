@@ -22,6 +22,13 @@ const colorVariant = v.object({
   stock: sizeStock,
   measurements: v.optional(measurementRecord),
 });
+const productStatus = v.union(
+  v.literal('draft'),
+  v.literal('pending'),
+  v.literal('private'),
+  v.literal('scheduled'),
+  v.literal('published')
+);
 
 export default defineSchema({
   authUsers: defineTable({
@@ -115,7 +122,10 @@ export default defineSchema({
     basePrice: v.optional(v.number()),
     salePrice: v.optional(v.number()),
     isFeatured: v.boolean(),
+    status: v.optional(productStatus),
+    publishAt: v.optional(v.number()),
     isPublished: v.boolean(),
+    isInStock: v.optional(v.boolean()),
     colorVariants: v.array(colorVariant),
     createdAt: v.number(),
     updatedAt: v.number(),

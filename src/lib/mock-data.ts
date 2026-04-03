@@ -1,5 +1,13 @@
 import { BRAND, DEFAULT_SHIPPING_FEE } from '@/lib/constants';
-import { Category, InventoryAuditLog, Order, Product, StoreSettings, User } from '@/lib/types';
+import {
+  Category,
+  InventoryAuditLog,
+  Order,
+  Product,
+  StoreSettings,
+  User,
+} from '@/lib/types';
+import { isProductVisible } from '@/lib/product-visibility';
 
 const now = Date.now();
 
@@ -73,7 +81,9 @@ export const products: Product[] = [
     basePrice: 56000,
     salePrice: 49000,
     isFeatured: true,
+    status: 'published',
     isPublished: true,
+    isInStock: true,
     colorVariants: [
       {
         id: 'variant-001-navy',
@@ -104,7 +114,9 @@ export const products: Product[] = [
     categoryId: 'cat-women-shirts',
     basePrice: 52000,
     isFeatured: true,
+    status: 'published',
     isPublished: true,
+    isInStock: true,
     colorVariants: [
       {
         id: 'variant-002-black',
@@ -136,7 +148,9 @@ export const products: Product[] = [
     basePrice: 61000,
     salePrice: 55000,
     isFeatured: true,
+    status: 'published',
     isPublished: true,
+    isInStock: true,
     colorVariants: [
       {
         id: 'variant-003-sky',
@@ -283,29 +297,31 @@ export const inventoryAuditLogs: InventoryAuditLog[] = [
 ];
 
 export function getProductBySlug(slug: string): Product | undefined {
-  return products.find((product) => product.slug === slug && product.isPublished);
+  return products.find((product) => product.slug === slug && isProductVisible(product));
 }
 
 export function getProductsByCategory(categorySlug: string): Product[] {
+  const visibleProducts = products.filter((product) => isProductVisible(product));
+
   if (categorySlug === 'new') {
-    return products.filter((item) => item.categoryId === 'cat-new');
+    return visibleProducts.filter((item) => item.categoryId === 'cat-new');
   }
 
   if (categorySlug === 'sale') {
-    return products.filter((item) => item.salePrice && item.salePrice < (item.basePrice ?? 0));
+    return visibleProducts.filter((item) => item.salePrice && item.salePrice < (item.basePrice ?? 0));
   }
 
   const category = categories.find((item) => item.slug === categorySlug && !item.parentId);
   if (!category) {
-    return products;
+    return visibleProducts;
   }
 
   const childCategoryIds = categories
     .filter((item) => item.parentId === category._id)
     .map((item) => item._id);
-  return products.filter((item) => childCategoryIds.includes(item.categoryId));
+  return visibleProducts.filter((item) => childCategoryIds.includes(item.categoryId));
 }
 
 export function getFeaturedProducts(): Product[] {
-  return products.filter((product) => product.isFeatured && product.isPublished);
+  return products.filter((product) => product.isFeatured && isProductVisible(product));
 }
