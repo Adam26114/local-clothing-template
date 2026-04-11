@@ -28,6 +28,61 @@ function getConvexClient() {
   return convexClient;
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function waitForImageToBeReady(url: string, timeoutMs = 15000) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const loaded = await new Promise<boolean>((resolve) => {
+      const image = new Image();
+      let settled = false;
+
+      const finish = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timerId);
+        resolve(value);
+      };
+
+      const timerId = window.setTimeout(() => finish(false), 2500);
+
+      image.onload = () => finish(true);
+      image.onerror = () => finish(false);
+      image.src = `${url}${url.includes('?') ? '&' : '?'}cb=${Date.now()}`;
+    });
+
+    if (loaded) {
+      return;
+    }
+
+    await delay(400);
+  }
+
+  throw new Error('Uploaded image is taking too long to become available.');
+}
+
+async function resolveUploadedImageUrl(client: ConvexHttpClient, storageId: string) {
+  const url = await client.query(refs.resolveImageUrl, {
+    storageId,
+  });
+
+  if (!url) {
+    return null;
+  }
+
+  try {
+    await waitForImageToBeReady(url);
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 export async function uploadProductImage(file: File): Promise<{ storageId: string; url: string }> {
   const client = getConvexClient();
   const uploadUrl = await client.mutation(refs.generateUploadUrl, {});
@@ -46,16 +101,13 @@ export async function uploadProductImage(file: File): Promise<{ storageId: strin
     throw new Error('Convex did not return a storage ID for the uploaded image.');
   }
 
-  const url = await client.query(refs.resolveImageUrl, {
-    storageId: uploadResult.storageId,
-  });
-
-  if (!url) {
+  const resolvedUrl = await resolveUploadedImageUrl(client, uploadResult.storageId);
+  if (!resolvedUrl) {
     throw new Error('Unable to resolve uploaded image URL.');
   }
 
   return {
     storageId: uploadResult.storageId,
-    url,
+    url: resolvedUrl,
   };
 }

@@ -83,7 +83,6 @@ export const products: Product[] = [
     isFeatured: true,
     status: 'published',
     isPublished: true,
-    isInStock: true,
     colorVariants: [
       {
         id: 'variant-001-navy',
@@ -116,7 +115,6 @@ export const products: Product[] = [
     isFeatured: true,
     status: 'published',
     isPublished: true,
-    isInStock: true,
     colorVariants: [
       {
         id: 'variant-002-black',
@@ -150,7 +148,6 @@ export const products: Product[] = [
     isFeatured: true,
     status: 'published',
     isPublished: true,
-    isInStock: true,
     colorVariants: [
       {
         id: 'variant-003-sky',

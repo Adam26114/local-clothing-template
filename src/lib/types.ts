@@ -63,7 +63,6 @@ export type Product = {
   status: ProductStatus;
   publishAt?: number;
   isPublished: boolean;
-  isInStock: boolean;
   colorVariants: ColorVariant[];
   createdAt: number;
   updatedAt: number;

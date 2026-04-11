@@ -29,7 +29,6 @@ import type {
   SettingsRepository,
   UsersRepository,
 } from '@/lib/data/repositories/types';
-import { deriveProductInStock } from '@/lib/product-availability';
 import {
   deriveProductStatus,
   isProductVisible,
@@ -156,12 +155,6 @@ function toProduct(input: UnknownRecord): Product {
       publishAt,
       isPublished: toBoolean(input.isPublished),
     }),
-    isInStock:
-      typeof input.isInStock === 'boolean'
-        ? input.isInStock
-        : deriveProductInStock({
-            colorVariants,
-          }),
     colorVariants,
     createdAt: Number(input.createdAt ?? 0),
     updatedAt: Number(input.updatedAt ?? 0),

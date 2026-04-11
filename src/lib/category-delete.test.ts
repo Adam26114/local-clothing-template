@@ -47,7 +47,6 @@ describe('category delete helpers', () => {
       isFeatured: false,
       status: 'published',
       isPublished: true,
-      isInStock: true,
       colorVariants: [],
       createdAt: 1,
       updatedAt: 1,
