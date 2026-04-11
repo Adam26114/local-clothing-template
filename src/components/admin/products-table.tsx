@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Copy, Loader2, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -65,6 +65,11 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
     'all'
   );
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    setRows(initialProducts);
+    setSelectedProducts([]);
+  }, [initialProducts]);
 
   const categoryMap = useMemo(() => {
     return new Map(categories.map((category) => [category._id, category.name]));

@@ -14,7 +14,7 @@ export function ProductCard({ product }: { product: Product }) {
     variant.selectedSizes.find((entry) => (variant.stock[entry] ?? 0) > 0) ??
     variant.selectedSizes[0] ??
     'M';
-  const canQuickAdd = product.isInStock && (variant.stock[size] ?? 0) > 0;
+  const canQuickAdd = (variant.stock[size] ?? 0) > 0;
 
   const handleQuickAdd = () => {
     if (!canQuickAdd) {

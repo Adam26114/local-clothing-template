@@ -2,7 +2,7 @@ import { v } from 'convex/values';
 
 import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
-import { isProductVisible } from '../src/lib/product-visibility';
+import { isProductVisible } from './product_visibility';
 
 type ProductVariant = {
   id: string;
@@ -140,18 +140,18 @@ export const updateStockWithAudit = mutation({
 
     const log = (await ctx.db.get(logId)) as InventoryAuditRecord | null;
 
-    return {
-      row: {
-        productId: String(product._id),
-        productName: product.name,
-        variantId: args.variantId,
-        colorName: variant.colorName,
-        size: args.size,
-        stock: normalizedValue,
+      return {
+        row: {
+          productId: String(product._id),
+          productName: product.name,
+          variantId: args.variantId,
+          colorName: variant.colorName,
+          size: args.size,
+          stock: normalizedValue,
           isPublished: isProductVisible(product),
-      },
-      log,
-    };
+        },
+        log,
+      };
   },
 });
 

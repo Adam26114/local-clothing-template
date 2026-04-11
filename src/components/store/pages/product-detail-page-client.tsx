@@ -40,15 +40,9 @@ export function ProductDetailPageClient({
   }
 
   const currentStock = selectedVariant.stock[size] ?? 0;
-  const isUnavailable = !product.isInStock;
-  const isOut = isUnavailable || currentStock <= 0;
-  const lowStock = !isUnavailable && currentStock > 0 && currentStock < 5;
+  const isOut = currentStock <= 0;
+  const lowStock = currentStock > 0 && currentStock < 5;
   const addToCart = () => {
-    if (isUnavailable) {
-      toast.error('This product is currently unavailable.');
-      return;
-    }
-
     if (currentStock <= 0) {
       toast.error('Item sold out. Removed from cart.');
       return;
@@ -118,7 +112,7 @@ export function ProductDetailPageClient({
             <div className="flex flex-wrap gap-2">
               {selectedVariant.selectedSizes.map((item) => {
                 const stock = selectedVariant.stock[item] ?? 0;
-                const disabled = isUnavailable || stock <= 0;
+                const disabled = stock <= 0;
                 return (
                   <button
                     key={item}
@@ -134,9 +128,7 @@ export function ProductDetailPageClient({
                 );
               })}
             </div>
-            {isUnavailable ? (
-              <p className="text-xs text-red-600">Unavailable</p>
-            ) : lowStock ? (
+            {lowStock ? (
               <p className="text-xs text-orange-600">Low stock: only {currentStock} left</p>
             ) : isOut ? (
               <p className="text-xs text-red-600">Out of stock</p>

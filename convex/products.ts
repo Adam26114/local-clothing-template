@@ -6,7 +6,7 @@ import {
   deriveProductStatus,
   isProductVisible,
   normalizeProductStatus,
-} from '../src/lib/product-visibility';
+} from './product_visibility';
 
 type ProductVariant = {
   id: string;
@@ -39,7 +39,6 @@ type ProductInput = {
   status: 'draft' | 'pending' | 'private' | 'scheduled' | 'published';
   publishAt?: number;
   isPublished: boolean;
-  isInStock: boolean;
   colorVariants: ProductVariant[];
 };
 
@@ -89,7 +88,6 @@ const productInputValidator = {
   status: productStatus,
   publishAt: v.optional(v.number()),
   isPublished: v.boolean(),
-  isInStock: v.boolean(),
   colorVariants: v.array(colorVariantValidator),
 } as const;
 
@@ -282,7 +280,6 @@ export const duplicate = mutation({
       status: 'draft',
       publishAt: undefined,
       isPublished: false,
-      isInStock: source.isInStock,
       colorVariants: source.colorVariants.map((variant) => ({
         ...variant,
         id: `${variant.id}-copy-${randomSuffix()}`,

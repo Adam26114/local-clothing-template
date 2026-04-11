@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Plus, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, Loader2, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { createProductAction, updateProductAction } from '@/app/(admin)/admin/products/actions';
@@ -16,17 +16,6 @@ import {
 } from '@/components/admin/product-editor/variant-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogMedia,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import {
   Card,
   CardContent,
@@ -51,11 +40,9 @@ import { Textarea } from '@/components/ui/textarea';
 import type { Category, ColorVariant, Product, ProductStatus, SizeKey, VariantMeasurement } from '@/lib/types';
 import {
   deriveProductStatus,
-  PRODUCT_STATUS_DESCRIPTIONS,
   PRODUCT_STATUS_DOT_CLASSES,
   PRODUCT_STATUS_LABELS,
 } from '@/lib/product-visibility';
-import { deriveProductInStock } from '@/lib/product-availability';
 
 type ProductEditorProps = {
   mode: 'create' | 'edit';
@@ -162,23 +149,14 @@ function prepareVariantForEditor(variant: ColorVariant): ColorVariant {
   });
 }
 
-function getInitialProductInStock(product: Pick<Product, 'colorVariants'> & { isInStock?: boolean }) {
-  return deriveProductInStock({
-    isInStock: product.isInStock,
-    colorVariants: product.colorVariants,
-  });
-}
-
 const STATUS_VALUES = ['draft', 'pending', 'private', 'scheduled', 'published'] as const;
 
 const STATUS_OPTIONS: Array<{
   value: ProductStatus;
   label: string;
-  description: string;
 }> = STATUS_VALUES.map((status) => ({
   value: status,
   label: PRODUCT_STATUS_LABELS[status],
-  description: PRODUCT_STATUS_DESCRIPTIONS[status],
 }));
 
 export function ProductEditor({ mode, productId, initialProduct, categories }: ProductEditorProps) {
@@ -202,20 +180,12 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
     return [createFallbackVariant(DEFAULT_VARIANT_ID)];
   }, [sourceProduct]);
 
-  const sourceInStock = sourceProduct?.isInStock;
   const sourceStatus = sourceProduct ? deriveProductStatus(sourceProduct) : 'draft';
-  const initialInStock = useMemo(() => {
-    return getInitialProductInStock({
-      colorVariants: initialVariants,
-      isInStock: sourceInStock,
-    });
-  }, [initialVariants, sourceInStock]);
 
   const [form, setForm] = useState<Product>(() => {
     if (sourceProduct) {
       return {
         ...sourceProduct,
-        isInStock: initialInStock,
         status: sourceStatus,
         publishAt: sourceProduct.publishAt,
         colorVariants: initialVariants,
@@ -235,7 +205,6 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       status: 'draft',
       publishAt: undefined,
       isPublished: false,
-      isInStock: initialInStock,
       colorVariants: initialVariants,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -249,7 +218,6 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
   const [imageUploadStateByVariant, setImageUploadStateByVariant] = useState<
     Record<string, { pending: number; failed: number }>
   >({});
-  const [stockTurnOffOpen, setStockTurnOffOpen] = useState(false);
 
   const imageUploadSummary = useMemo(() => {
     return Object.values(imageUploadStateByVariant).reduce(
@@ -363,20 +331,6 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
     toast.success('Measurements copied.');
   };
 
-  const handleInStockChange = (checked: boolean) => {
-    if (checked) {
-      setForm((prev) => ({ ...prev, isInStock: true }));
-      return;
-    }
-
-    setStockTurnOffOpen(true);
-  };
-
-  const confirmTurnOffStock = () => {
-    setForm((prev) => ({ ...prev, isInStock: false }));
-    setStockTurnOffOpen(false);
-  };
-
   const saveProduct = (options?: { forcePublish?: boolean }) => {
     if (!form.name.trim()) {
       toast.error('Product name is required.');
@@ -436,7 +390,6 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
             nextStatus === 'published' ||
               (nextStatus === 'scheduled' && nextPublishAt && nextPublishAt <= Date.now())
           ),
-          isInStock: form.isInStock,
           colorVariants: sanitizedVariants,
         };
 
@@ -452,20 +405,7 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
 
         toast.success(mode === 'create' ? 'Product created.' : 'Product updated.');
 
-        if (mode === 'create') {
-          router.push('/admin/products');
-        } else {
-          setForm({
-            ...result.data,
-            isInStock: result.data.isInStock,
-            status: result.data.status,
-            publishAt: result.data.publishAt,
-            colorVariants: result.data.colorVariants.map((variant) =>
-              prepareVariantForEditor(variant)
-            ),
-          });
-        }
-        router.refresh();
+        window.location.assign('/admin/products');
       } finally {
         setSaveAction(null);
       }
@@ -680,12 +620,6 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
                     }}
                   />
                 </div>
-                <Separator />
-
-                <label className="flex items-center gap-3 text-sm">
-                  <Switch checked={form.isInStock} onCheckedChange={handleInStockChange} />
-                  In stock
-                </label>
               </div>
             </CardContent>
           </Card>
@@ -706,24 +640,16 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
                   }
                 >
                   <SelectTrigger className="w-full">
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={`size-2 rounded-full ${PRODUCT_STATUS_DOT_CLASSES[form.status]}`}
-                      />
-                      <span>{PRODUCT_STATUS_LABELS[form.status]}</span>
-                    </span>
+                    <SelectValue placeholder="Draft" />
                   </SelectTrigger>
                   <SelectContent className="w-[320px]" align="start">
                     {STATUS_OPTIONS.map((option) => (
                       <SelectItem key={option.value} value={option.value}>
-                        <div className="flex items-start gap-2">
+                        <div className="flex items-center gap-2">
                           <span
-                            className={`mt-1 size-2 rounded-full ${PRODUCT_STATUS_DOT_CLASSES[option.value]}`}
+                            className={`size-2 rounded-full ${PRODUCT_STATUS_DOT_CLASSES[option.value]}`}
                           />
-                          <div className="space-y-0.5">
-                            <div className="font-medium">{option.label}</div>
-                            <div className="text-xs text-muted-foreground">{option.description}</div>
-                          </div>
+                          <span className="font-medium">{option.label}</span>
                         </div>
                       </SelectItem>
                     ))}
@@ -805,38 +731,6 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
           </Card>
         </div>
       </div>
-
-      <AlertDialog
-        open={stockTurnOffOpen}
-        onOpenChange={(open) => {
-          setStockTurnOffOpen(open);
-        }}
-      >
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogMedia className="bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-              <TriangleAlert className="size-8" />
-            </AlertDialogMedia>
-            <AlertDialogTitle>Turn off in stock?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will hide the product from storefront availability, but it will not change any
-              variant or size quantities. You can turn it back on later.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={(event) => {
-                event.preventDefault();
-                confirmTurnOffStock();
-              }}
-            >
-              Turn off
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
     </div>
   );
