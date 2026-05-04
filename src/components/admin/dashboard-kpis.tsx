@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { formatMmk } from '@/lib/currency';
+import { formatMmk } from '@/lib/utils/currency';
 import type { DashboardKpi } from '@/lib/data/repositories/types';
 
 export function DashboardKpis({ kpis }: { kpis: DashboardKpi }) {

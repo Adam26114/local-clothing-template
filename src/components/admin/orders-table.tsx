@@ -8,7 +8,7 @@ import { AdminDataTable, withRowSelection } from '@/components/admin/data-table'
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ORDER_STATUSES } from '@/lib/constants';
-import { formatMmk } from '@/lib/currency';
+import { formatMmk } from '@/lib/utils/currency';
 import { Order, OrderStatus } from '@/lib/types';
 
 export function OrdersTable({

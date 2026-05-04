@@ -5,7 +5,7 @@ import { Search, ShoppingBag, User } from 'lucide-react';
 
 import { NAV_CATEGORIES } from '@/lib/constants';
 import { cn } from '@/lib/utils';
-import { useCart } from '@/components/store/cart-context';
+import { useCart } from '@/context/cart-context';
 
 export function StoreHeader() {
   const { totalItems } = useCart();

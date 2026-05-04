@@ -5,7 +5,7 @@ import { mutation, query } from './_generated/server';
 import {
   collectCategoryDeleteIds,
   hasLinkedProductsInCategoryTree,
-} from '../src/lib/category-delete';
+} from '../src/lib/utils/category-delete';
 
 type CategoryRecord = {
   _id: Id<'categories'>;

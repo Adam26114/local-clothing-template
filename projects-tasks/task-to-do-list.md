@@ -1,3 +1,46 @@
+# Refactor Task Plan
+
+## Status Legend
+- [ ] TODO
+- [x] DONE
+- [~] IN PROGRESS
+
+## Audit Summary
+- The clearest repeated logic cluster is the server-action result boilerplate in `src/app/(admin)/admin/products/actions.ts`, `src/app/(admin)/admin/categories/actions.ts`, and `src/app/(admin)/admin/inventory/actions.ts`.
+- Those files repeat the same `ActionResult` union shape and the same try/catch-to-error-message pattern.
+- Slug normalization was duplicated across the mock repository and both admin editors, so it now lives in a shared helper.
+- The product editor now keeps its transformation helpers in a dedicated sibling utility file to separate UI from data-shaping logic.
+- The current folder structure is already fairly clean, so this first pass stays inside `src/lib/` and the admin component/domain modules instead of moving routes around.
+- Local Bun/Node execution is not available in this shell, so command-based verification is currently blocked here.
+
+## Proposed Folder Structure
+```text
+src/
+  app/
+  components/
+    admin/
+      product-editor/
+        product-editor-utils.ts
+  convex/
+  hooks/
+  lib/
+    auth/
+    data/
+    slug.ts
+    server-action.ts
+```
+
+## Refactor Tasks
+- [x] Audit the repeated admin server-action patterns and pick a safe first extraction target.
+- [x] Extract a shared server-action result helper into `src/lib/server-action.ts`.
+- [x] Migrate the admin products, categories, and inventory action modules to use the shared helper.
+- [x] Extract shared slug normalization into `src/lib/slug.ts` and update the mock repository and admin editors.
+- [x] Split product-editor transformation helpers into `src/components/admin/product-editor/product-editor-utils.ts`.
+- [x] Extract shared sortOrder normalization into `src/lib/data/validation.ts` and update consumers.
+- [~] Run Bun-based verification (`typecheck`, `lint`, `test`, `format:check`) after the extraction.
+
+---
+
 # Task To-Do List
 
 ## PRD-Aligned Execution Queue (Admin-First)

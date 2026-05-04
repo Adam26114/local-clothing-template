@@ -1,5 +1,6 @@
 import { BRAND } from '@/lib/constants';
-import { collectCategoryDeleteIds, hasLinkedProductsInCategoryTree } from '@/lib/category-delete';
+import { collectCategoryDeleteIds, hasLinkedProductsInCategoryTree } from '@/lib/utils/category-delete';
+import { normalizeSortOrder } from '@/lib/data/validation';
 import {
   categories as seedCategories,
   inventoryAuditLogs as seedInventoryAuditLogs,
@@ -7,7 +8,7 @@ import {
   products as seedProducts,
   storeSettings as seedStoreSettings,
   users as seedUsers,
-} from '@/lib/mock-data';
+} from '@/lib/data/mock-data';
 import type {
   Category,
   InventoryAuditLog,
@@ -38,7 +39,8 @@ import {
   deriveProductStatus,
   isProductVisible,
   normalizeProductStatus,
-} from '@/lib/product-visibility';
+} from '@/lib/utils/product-visibility';
+import { normalizeSlug } from '@/lib/utils/slug';
 
 function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -64,17 +66,8 @@ function randomSuffix(): string {
   return Math.random().toString(36).slice(2, 8);
 }
 
-function toSlug(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
-}
-
 function ensureUniqueSlug(base: string, currentId?: string): string {
-  const clean = toSlug(base) || `product-${randomSuffix()}`;
+  const clean = normalizeSlug(base) || `product-${randomSuffix()}`;
   let candidate = clean;
   let index = 1;
 
@@ -89,7 +82,7 @@ function ensureUniqueSlug(base: string, currentId?: string): string {
 }
 
 function ensureUniqueCategorySlug(base: string, currentId?: string): string {
-  const clean = toSlug(base) || `category-${randomSuffix()}`;
+  const clean = normalizeSlug(base) || `category-${randomSuffix()}`;
   let candidate = clean;
   let index = 1;
 
@@ -118,7 +111,7 @@ function normalizeCategoryInput(input: CategoryUpsertInput): CategoryUpsertInput
     slug: input.slug?.trim() || name,
     description: input.description?.trim() || undefined,
     parentId: input.parentId || undefined,
-    sortOrder: Number.isFinite(input.sortOrder) ? Math.max(0, Math.floor(input.sortOrder)) : 0,
+    sortOrder: normalizeSortOrder(input.sortOrder),
     isActive: input.isActive,
   };
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { Category, Product } from '@/lib/types';
 
-import { collectCategoryDeleteIds, hasLinkedProductsInCategoryTree } from './category-delete';
+import { collectCategoryDeleteIds, hasLinkedProductsInCategoryTree } from './utils/category-delete';
 
 describe('category delete helpers', () => {
   const categories: Category[] = [

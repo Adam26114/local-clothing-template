@@ -43,7 +43,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { mergeVisibleOrder } from '@/components/admin/category-order';
-import { collectCategoryDeleteIds } from '@/lib/category-delete';
+import { collectCategoryDeleteIds } from '@/lib/utils/category-delete';
 import type { Category } from '@/lib/types';
 
 type CategoriesTableProps = {

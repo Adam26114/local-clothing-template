@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import { DataSourceNotice } from '@/components/shared/data-source-notice';
-import { formatMmk } from '@/lib/currency';
+import { formatMmk } from '@/lib/utils/currency';
 import { getServerDataRepositories } from '@/lib/data/repositories';
 
 export default async function AdminUserDetailPage({ params }: { params: Promise<{ id: string }> }) {

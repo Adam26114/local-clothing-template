@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
+import { useEffect, useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Plus } from 'lucide-react';
@@ -11,8 +11,6 @@ import { VariantCard } from '@/components/admin/product-editor/variant-card';
 import {
   DEFAULT_VARIANT_ID,
   createFallbackVariant,
-  orderSizes,
-  sanitizeVariantForPersist,
 } from '@/components/admin/product-editor/variant-helpers';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,12 +35,18 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import type { Category, ColorVariant, Product, ProductStatus, SizeKey, VariantMeasurement } from '@/lib/types';
+import type { Category, ColorVariant, Product, ProductStatus } from '@/lib/types';
+import { normalizeSlug } from '@/lib/utils/slug';
+import { deriveProductStatus, PRODUCT_STATUS_DOT_CLASSES, PRODUCT_STATUS_LABELS } from '@/lib/utils/product-visibility';
 import {
-  deriveProductStatus,
-  PRODUCT_STATUS_DOT_CLASSES,
-  PRODUCT_STATUS_LABELS,
-} from '@/lib/product-visibility';
+  buildProductUpsertInput,
+  cloneMeasurements,
+  formatDateTimeLocal,
+  hasAnyMeasurements,
+  parseDateTimeLocal,
+  prepareVariantForEditor,
+  serializeProductUpsertInput,
+} from './product-editor/product-editor-utils';
 
 type ProductEditorProps = {
   mode: 'create' | 'edit';
@@ -50,104 +54,6 @@ type ProductEditorProps = {
   initialProduct?: Product;
   categories: Category[];
 };
-
-function normalizeSlug(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
-}
-
-function hasAnyMeasurements(variant: ColorVariant) {
-  const measurements = variant.measurements;
-  if (!measurements) return false;
-
-  return Object.values(measurements).some((sizeMeasurements) => {
-    if (!sizeMeasurements) return false;
-    return Object.values(sizeMeasurements).some((value) => typeof value === 'number' && value > 0);
-  });
-}
-
-function cloneMeasurements(
-  source: Partial<Record<SizeKey, VariantMeasurement>> | undefined,
-  sizeFilter: SizeKey[]
-): Partial<Record<SizeKey, VariantMeasurement>> | undefined {
-  if (!source) return undefined;
-
-  const result: Partial<Record<SizeKey, VariantMeasurement>> = {};
-
-  for (const size of sizeFilter) {
-    const row = source[size];
-    if (!row) continue;
-
-    const nextRow: VariantMeasurement = {};
-    for (const [field, value] of Object.entries(row)) {
-      if (typeof value !== 'number' || value <= 0) continue;
-      nextRow[field as keyof VariantMeasurement] = value;
-    }
-
-    if (Object.keys(nextRow).length > 0) {
-      result[size] = nextRow;
-    }
-  }
-
-  return Object.keys(result).length > 0 ? result : undefined;
-}
-
-function formatDateTimeLocal(value?: number) {
-  if (!value) return '';
-
-  const date = new Date(value);
-  const pad = (input: number) => String(input).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
-    date.getHours()
-  )}:${pad(date.getMinutes())}`;
-}
-
-function parseDateTimeLocal(value: string) {
-  if (!value) return undefined;
-
-  const [datePart, timePart] = value.split('T');
-  if (!datePart || !timePart) return undefined;
-
-  const [year, month, day] = datePart.split('-').map(Number);
-  const [hours, minutes] = timePart.split(':').map(Number);
-
-  if (
-    !Number.isFinite(year) ||
-    !Number.isFinite(month) ||
-    !Number.isFinite(day) ||
-    !Number.isFinite(hours) ||
-    !Number.isFinite(minutes)
-  ) {
-    return undefined;
-  }
-
-  return new Date(year, month - 1, day, hours, minutes, 0, 0).getTime();
-}
-
-function prepareVariantForEditor(variant: ColorVariant): ColorVariant {
-  const selectedSizes = orderSizes(
-    variant.selectedSizes.length > 0 ? variant.selectedSizes : (Object.keys(variant.stock) as SizeKey[])
-  );
-
-  const withRequiredSize = selectedSizes.length > 0 ? selectedSizes : (['M'] as SizeKey[]);
-
-  return sanitizeVariantForPersist({
-    ...variant,
-    id: variant.id || DEFAULT_VARIANT_ID,
-    selectedSizes: withRequiredSize,
-    stock:
-      selectedSizes.length > 0
-        ? variant.stock
-        : {
-            ...variant.stock,
-            M: variant.stock.M ?? 0,
-          },
-  });
-}
 
 const STATUS_VALUES = ['draft', 'pending', 'private', 'scheduled', 'published'] as const;
 
@@ -182,10 +88,11 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
 
   const sourceStatus = sourceProduct ? deriveProductStatus(sourceProduct) : 'draft';
 
-  const [form, setForm] = useState<Product>(() => {
+  const initialForm = useMemo<Product>(() => {
     if (sourceProduct) {
       return {
         ...sourceProduct,
+        sku: sourceProduct.sku ?? '',
         status: sourceStatus,
         publishAt: sourceProduct.publishAt,
         colorVariants: initialVariants,
@@ -209,7 +116,17 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-  });
+  }, [initialVariants, sourceProduct, sourceStatus]);
+
+  const [form, setForm] = useState<Product>(() => initialForm);
+  const [baselineSnapshot, setBaselineSnapshot] = useState(() =>
+    serializeProductUpsertInput(initialForm)
+  );
+
+  useEffect(() => {
+    setForm(initialForm);
+    setBaselineSnapshot(serializeProductUpsertInput(initialForm));
+  }, [initialForm]);
 
   const [expandedVariantId, setExpandedVariantId] = useState<string | null>(
     initialVariants[0]?.id ?? null
@@ -234,6 +151,9 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
     const base = form.name.trim() || form.slug.trim() || 'product';
     return normalizeSlug(base);
   }, [form.name, form.slug]);
+
+  const currentSnapshot = useMemo(() => serializeProductUpsertInput(form), [form]);
+  const isDirty = currentSnapshot !== baselineSnapshot;
 
   const addVariant = () => {
     const nextVariant = createFallbackVariant();
@@ -347,13 +267,6 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       return;
     }
 
-    const sanitizedVariants = form.colorVariants.map((variant) => sanitizeVariantForPersist(variant));
-
-    if (sanitizedVariants.length === 0) {
-      toast.error('At least one valid color variant is required.');
-      return;
-    }
-
     if (imageUploadSummary.pending > 0) {
       toast.error('Please wait for all image uploads to finish.');
       return;
@@ -364,10 +277,11 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
       return;
     }
 
-    const nextStatus: ProductStatus = options?.forcePublish ? 'published' : form.status;
-    const nextPublishAt = nextStatus === 'scheduled' ? form.publishAt : undefined;
+    const nextPayload = buildProductUpsertInput(form, {
+      forcePublish: options?.forcePublish,
+    });
 
-    if (nextStatus === 'scheduled' && !nextPublishAt) {
+    if (nextPayload.status === 'scheduled' && !nextPayload.publishAt) {
       toast.error('Scheduled products need a publish date.');
       return;
     }
@@ -375,34 +289,17 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
     setSaveAction(options?.forcePublish ? 'publish' : 'save');
     startTransition(async () => {
       try {
-        const payload = {
-          sku: undefined,
-          name: form.name.trim(),
-          slug: autoSlug,
-          description: form.description.trim(),
-          categoryId: form.categoryId,
-          basePrice: Number(form.basePrice) || 0,
-          salePrice: form.salePrice && form.salePrice > 0 ? Number(form.salePrice) : undefined,
-          isFeatured: form.isFeatured,
-          status: nextStatus,
-          publishAt: nextPublishAt,
-          isPublished: Boolean(
-            nextStatus === 'published' ||
-              (nextStatus === 'scheduled' && nextPublishAt && nextPublishAt <= Date.now())
-          ),
-          colorVariants: sanitizedVariants,
-        };
-
         const result =
           mode === 'create'
-            ? await createProductAction(payload)
-            : await updateProductAction(productId ?? form._id, payload);
+            ? await createProductAction(nextPayload)
+            : await updateProductAction(productId ?? form._id, nextPayload);
 
         if (!result.ok) {
           toast.error(result.error);
           return;
         }
 
+        setBaselineSnapshot(serializeProductUpsertInput(result.data));
         toast.success(mode === 'create' ? 'Product created.' : 'Product updated.');
 
         window.location.assign('/admin/products');
@@ -413,6 +310,7 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
   };
 
   const isSaving = isPending || imageUploadSummary.pending > 0 || imageUploadSummary.failed > 0;
+  const canSubmit = isDirty && !isSaving;
 
   return (
     <div className="space-y-6">
@@ -437,6 +335,11 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {isDirty ? (
+            <Badge variant="secondary" className="border-dashed">
+              Unsaved changes
+            </Badge>
+          ) : null}
           <Button
             type="button"
             variant="outline"
@@ -449,7 +352,7 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
             type="button"
             variant="outline"
             onClick={() => saveProduct()}
-            disabled={isSaving}
+            disabled={!canSubmit}
           >
             {saveAction === 'save' ? <Loader2 className="size-4 animate-spin" /> : null}
             Save Changes
@@ -458,7 +361,7 @@ export function ProductEditor({ mode, productId, initialProduct, categories }: P
             type="button"
             className="bg-black text-white hover:bg-zinc-800"
             onClick={() => saveProduct({ forcePublish: true })}
-            disabled={isSaving}
+            disabled={!canSubmit}
           >
             {saveAction === 'publish' ? <Loader2 className="size-4 animate-spin" /> : null}
             Publish Now

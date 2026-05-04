@@ -3,9 +3,9 @@
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
-import { formatMmk } from '@/lib/currency';
-import { products } from '@/lib/mock-data';
-import { useCart } from '@/components/store/cart-context';
+import { formatMmk } from '@/lib/utils/currency';
+import { products } from '@/lib/data/mock-data';
+import { useCart } from '@/context/cart-context';
 
 function itemPrice(productId: string): number {
   const product = products.find((item) => item._id === productId);

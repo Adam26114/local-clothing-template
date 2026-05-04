@@ -33,7 +33,7 @@ import {
   deriveProductStatus,
   isProductVisible,
   normalizeProductStatus,
-} from '@/lib/product-visibility';
+} from '@/lib/utils/product-visibility';
 
 type UnknownRecord = Record<string, unknown>;
 

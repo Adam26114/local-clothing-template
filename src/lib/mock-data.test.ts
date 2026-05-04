@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getFeaturedProducts, getProductsByCategory, getProductBySlug } from '@/lib/mock-data';
+import { getFeaturedProducts, getProductsByCategory, getProductBySlug } from '@/lib/data/mock-data';
 
 describe('mock data selectors', () => {
   it('returns product by slug', () => {

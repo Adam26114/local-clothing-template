@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { products } from '@/lib/mock-data';
+import { products } from '@/lib/data/mock-data';
 import { SizeKey } from '@/lib/types';
 
 type StoredCartItem = {

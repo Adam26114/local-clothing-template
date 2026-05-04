@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { Heart } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { useCart } from '@/components/store/cart-context';
+import { useCart } from '@/context/cart-context';
 import {
   Accordion,
   AccordionContent,
@@ -13,7 +13,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
-import { formatMmk } from '@/lib/currency';
+import { formatMmk } from '@/lib/utils/currency';
 import { Product, SizeKey, StoreSettings } from '@/lib/types';
 
 export function ProductDetailPageClient({

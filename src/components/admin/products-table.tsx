@@ -4,7 +4,15 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Copy, Loader2, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
+import {
+  CirclePlus,
+  Copy,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 
 import {
@@ -13,7 +21,7 @@ import {
   toggleBulkProductStatusAction,
 } from '@/app/(admin)/admin/products/actions';
 import { AdminDataTable, withRowSelection } from '@/components/admin/data-table';
-import { Combobox, type ComboboxOption } from '@/components/ui/combobox';
+import { Combobox, MultiCombobox, type ComboboxOption } from '@/components/ui/combobox';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,8 +31,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { formatMmk } from '@/lib/currency';
-import { PRODUCT_STATUS_LABELS } from '@/lib/product-visibility';
+import { formatMmk } from '@/lib/utils/currency';
+import { PRODUCT_STATUS_LABELS } from '@/lib/utils/product-visibility';
 import type { Category, Product } from '@/lib/types';
 
 type ProductsTableProps = {
@@ -59,8 +67,8 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
   const router = useRouter();
   const [rows, setRows] = useState<Product[]>(initialProducts);
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [statusFilters, setStatusFilters] = useState<Array<'active' | 'inactive'>>([]);
+  const [categoryFilters, setCategoryFilters] = useState<string[]>([]);
   const [priceFilter, setPriceFilter] = useState<'all' | 'under25' | '25to50' | '50to100' | '100plus'>(
     'all'
   );
@@ -81,7 +89,6 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
 
   const statusOptions = useMemo<ComboboxOption[]>(
     () => [
-      { value: 'all', label: 'All Status' },
       { value: 'active', label: 'Active' },
       { value: 'inactive', label: 'Inactive' },
     ],
@@ -90,7 +97,7 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
 
   const priceOptions = useMemo<ComboboxOption[]>(
     () => [
-      { value: 'all', label: 'All Prices' },
+      { value: 'all', label: 'All' },
       { value: 'under25', label: `Under ${formatMmk(25000)}` },
       { value: '25to50', label: `${formatMmk(25000)} - ${formatMmk(50000)}` },
       { value: '50to100', label: `${formatMmk(50000)} - ${formatMmk(100000)}` },
@@ -101,10 +108,13 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
 
   const filteredRows = useMemo(() => {
     return rows.filter((product) => {
-      const activeMatch =
-        activeFilter === 'all' ||
-        (activeFilter === 'active' ? product.isPublished : !product.isPublished);
-      const categoryMatch = categoryFilter === 'all' || product.categoryId === categoryFilter;
+      const statusMatch =
+        statusFilters.length === 0 ||
+        statusFilters.some((filter) =>
+          filter === 'active' ? product.isPublished : !product.isPublished
+        );
+      const categoryMatch =
+        categoryFilters.length === 0 || categoryFilters.includes(product.categoryId);
       const price = productDisplayPrice(product);
       const priceMatch =
         priceFilter === 'all' ||
@@ -112,9 +122,9 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
         (priceFilter === '25to50' && price >= 25000 && price < 50000) ||
         (priceFilter === '50to100' && price >= 50000 && price < 100000) ||
         (priceFilter === '100plus' && price >= 100000);
-      return activeMatch && categoryMatch && priceMatch;
+      return statusMatch && categoryMatch && priceMatch;
     });
-  }, [activeFilter, categoryFilter, priceFilter, rows]);
+  }, [categoryFilters, priceFilter, rows, statusFilters]);
 
   const selectedIds = useMemo(
     () => selectedProducts.map((product) => product._id),
@@ -316,37 +326,42 @@ export function ProductsTable({ initialProducts, categories }: ProductsTableProp
         showAddButton={false}
         toolbar={
           <div className="flex flex-wrap items-center gap-2">
-            <Combobox
-              value={activeFilter}
-              onValueChange={(value) => setActiveFilter(value as typeof activeFilter)}
+            <MultiCombobox
+              values={statusFilters}
+              onValuesChange={(values) => setStatusFilters(values as Array<'active' | 'inactive'>)}
               options={statusOptions}
-              placeholder="All Status"
+              placeholder="Status"
               searchPlaceholder="Search"
-              showChevron={false}
+              triggerIcon={<CirclePlus className="size-4" />}
+              triggerClassName="w-fit justify-start"
+              contentClassName="w-44"
             />
 
-            <Combobox
-              value={categoryFilter}
-              onValueChange={setCategoryFilter}
+            <MultiCombobox
+              values={categoryFilters}
+              onValuesChange={setCategoryFilters}
               options={[
-                { value: 'all', label: 'All Categories' },
                 ...categoryOptions.map((category) => ({
                   value: category._id,
                   label: category.name,
                 })),
               ]}
-              placeholder="All Categories"
+              placeholder="Category"
               searchPlaceholder="Search"
-              showChevron={false}
+              triggerIcon={<CirclePlus className="size-4" />}
+              triggerClassName="w-fit justify-start"
+              contentClassName="w-52"
             />
 
             <Combobox
               value={priceFilter}
               onValueChange={(value) => setPriceFilter(value as typeof priceFilter)}
               options={priceOptions}
-              placeholder="All Prices"
+              placeholder="Price"
               searchPlaceholder="Search"
-              showChevron={false}
+              triggerPrefix="Price:"
+              triggerClassName="w-fit justify-start"
+              contentClassName="w-56"
             />
 
             {selectedIds.length > 0 ? (

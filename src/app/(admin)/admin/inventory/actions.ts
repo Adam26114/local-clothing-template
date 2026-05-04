@@ -5,17 +5,8 @@ import { revalidatePath } from 'next/cache';
 import { getSession } from '@/lib/auth/session';
 import { getServerDataRepositories } from '@/lib/data/repositories';
 import type { InventoryRow, UpdateStockInput } from '@/lib/data/repositories/types';
+import { runServerAction, type ActionResult } from '@/lib/utils/server-action';
 import type { InventoryAuditLog, SizeKey } from '@/lib/types';
-
-type ActionResult<T> =
-  | {
-      ok: true;
-      data: T;
-    }
-  | {
-      ok: false;
-      error: string;
-    };
 
 function revalidateInventorySurfaces() {
   revalidatePath('/admin/inventory');
@@ -29,7 +20,7 @@ export async function updateInventoryStockAction(input: {
   size: SizeKey;
   newValue: number;
 }): Promise<ActionResult<{ row: InventoryRow; log: InventoryAuditLog }>> {
-  try {
+  return runServerAction(async () => {
     const session = await getSession();
     const changedBy = session.email ?? 'system@khit.local';
 
@@ -41,17 +32,8 @@ export async function updateInventoryStockAction(input: {
     const { repositories } = getServerDataRepositories();
     const result = await repositories.inventory.updateStock(payload);
     revalidateInventorySurfaces();
-
-    return {
-      ok: true,
-      data: result,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : 'Failed to update stock.',
-    };
-  }
+    return result;
+  }, 'Failed to update stock.');
 }
 
 export async function listInventoryAuditLogsAction(input: {
@@ -60,18 +42,9 @@ export async function listInventoryAuditLogsAction(input: {
   size?: SizeKey;
   limit?: number;
 }): Promise<ActionResult<InventoryAuditLog[]>> {
-  try {
+  return runServerAction(async () => {
     const { repositories } = getServerDataRepositories();
     const logs = await repositories.inventory.listAuditLogs(input);
-
-    return {
-      ok: true,
-      data: logs,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : 'Failed to load inventory logs.',
-    };
-  }
+    return logs;
+  }, 'Failed to load inventory logs.');
 }
