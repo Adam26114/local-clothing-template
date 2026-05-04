@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ORDER_STATUSES } from '@/lib/constants';
-import { formatMmk } from '@/lib/currency';
+import { formatMmk } from '@/lib/utils/currency';
 import { Order, OrderStatus } from '@/lib/types';
 
 export function OrderDetailPageClient({ order }: { order: Order }) {

@@ -14,6 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { normalizeSlug } from '@/lib/utils/slug';
+import { normalizeSortOrder } from '@/lib/data/validation';
 import type { Category } from '@/lib/types';
 
 type CategoryEditorProps = {
@@ -31,15 +33,6 @@ type CategoryFormState = {
   sortOrder: number;
   isActive: boolean;
 };
-
-function normalizeSlug(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-');
-}
 
 function collectDescendantIds(categories: Category[], rootId: string) {
   const descendants = new Set<string>();
@@ -119,7 +112,7 @@ export function CategoryEditor({ mode, categoryId, initialCategory, categories }
         slug: autoSlug,
         description: form.description.trim() || undefined,
         parentId: form.parentId || undefined,
-        sortOrder: Number.isFinite(form.sortOrder) ? Math.max(0, Math.floor(form.sortOrder)) : 0,
+        sortOrder: normalizeSortOrder(form.sortOrder),
         isActive: form.isActive,
       };
 
@@ -198,7 +191,7 @@ export function CategoryEditor({ mode, categoryId, initialCategory, categories }
               const parsed = Number(event.target.value);
               setForm((prev) => ({
                 ...prev,
-                sortOrder: Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0,
+                sortOrder: normalizeSortOrder(parsed),
               }));
             }}
           />

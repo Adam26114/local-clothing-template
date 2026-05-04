@@ -33,7 +33,6 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -47,12 +46,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { MultiCombobox, type MultiComboboxOption } from '@/components/ui/combobox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -275,30 +269,34 @@ export function AdminDataTable<TData, TValue>({
     });
   }
 
-  const columnsDropdown = (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Columns3 className="size-4" />
-          Columns
-          <ChevronDown className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-48">
-        {table
-          .getAllColumns()
-          .filter((column) => column.getCanHide())
-          .map((column) => (
-            <DropdownMenuCheckboxItem
-              key={column.id}
-              checked={column.getIsVisible()}
-              onCheckedChange={(value) => column.toggleVisibility(Boolean(value))}
-            >
-              {column.id}
-            </DropdownMenuCheckboxItem>
-          ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+  const columnOptions = React.useMemo<MultiComboboxOption[]>(
+    () =>
+      table
+        .getAllColumns()
+        .filter((column) => column.getCanHide())
+        .map((column) => {
+          const header = column.columnDef.header;
+          const label =
+            typeof header === 'string'
+              ? header
+              : typeof column.id === 'string'
+                ? column.id
+                : 'Column';
+
+          return {
+            value: column.id,
+            label,
+          };
+        }),
+    [table]
+  );
+
+  const visibleColumnIds = React.useMemo(
+    () =>
+      columnOptions
+        .filter((option) => table.getColumn(option.value)?.getIsVisible())
+        .map((option) => option.value),
+    [columnOptions, table]
   );
 
   const searchAndFilterRow = (
@@ -314,7 +312,24 @@ export function AdminDataTable<TData, TValue>({
       </div>
       <div className="flex items-center gap-2">
         {toolbar}
-        {showColumnsButton ? columnsDropdown : null}
+        {showColumnsButton ? (
+          <MultiCombobox
+            values={visibleColumnIds}
+            onValuesChange={(values) => {
+              const nextVisibility = Object.fromEntries(
+                columnOptions.map((option) => [option.value, values.includes(option.value)])
+              ) as VisibilityState;
+              setColumnVisibility(nextVisibility);
+            }}
+            options={columnOptions}
+            placeholder="Columns"
+            triggerLabel="Column"
+            triggerIcon={<Columns3 className="size-4" />}
+            triggerClassName="w-fit justify-start"
+            contentClassName="w-fit min-w-40"
+            align="end"
+          />
+        ) : null}
         {showAddButton ? (
           <Button
             size="sm"

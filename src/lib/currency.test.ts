@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatMmk } from '@/lib/currency';
+import { formatMmk } from '@/lib/utils/currency';
 
 describe('formatMmk', () => {
   it('formats values as comma-separated ks amounts', () => {

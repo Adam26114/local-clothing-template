@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/chart';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { formatMmk } from '@/lib/currency';
+import { formatMmk } from '@/lib/utils/currency';
 import type { RevenueRange, RevenueSeriesPoint } from '@/lib/data/repositories/types';
 
 type RevenueChartCardProps = {

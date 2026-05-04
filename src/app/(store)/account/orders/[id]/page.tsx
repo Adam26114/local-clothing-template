@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 
-import { formatMmk } from '@/lib/currency';
-import { orders } from '@/lib/mock-data';
+import { formatMmk } from '@/lib/utils/currency';
+import { orders } from '@/lib/data/mock-data';
 
 export default async function AccountOrderDetailPage({
   params,

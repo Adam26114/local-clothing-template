@@ -14,7 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { uploadProductImage } from '@/lib/product-image-storage';
+import { uploadProductImage } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 
 type MockImagePreview = {

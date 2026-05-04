@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { calculateShippingFee, calculateSubtotal, generateOrderNumber } from '@/lib/order-utils';
+import { calculateShippingFee, calculateSubtotal, generateOrderNumber } from '@/lib/utils/order';
 
 describe('order-utils', () => {
   it('calculates subtotal from line items', () => {

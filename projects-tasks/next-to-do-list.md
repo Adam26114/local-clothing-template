@@ -2,19 +2,19 @@
 
 ## Stage 2: Better Auth + Convex Adapter
 
-- [ ] Extend Convex schema for Better Auth persistence tables (accounts, sessions, verification tokens, auth identity links).
-- [ ] Implement custom Better Auth adapter against Convex query/mutation methods.
-- [ ] Wire real auth handlers in `src/app/api/auth/[...all]/route.ts`.
-- [ ] Replace cookie-shim login/register actions with Better Auth flows.
-- [ ] Implement superadmin bootstrap via `SUPERADMIN_EMAILS` during first identity sync.
-- [ ] Replace middleware/admin guard checks to Better Auth session verification.
+- [x] Extend Convex schema for Better Auth persistence tables (accounts, sessions, verification tokens, auth identity links).
+- [x] Implement custom Better Auth adapter against Convex query/mutation methods.
+- [x] Wire real auth handlers in `src/app/api/auth/[...all]/route.ts`.
+- [x] Replace cookie-shim login/register actions with Better Auth flows.
+- [x] Implement superadmin bootstrap via `SUPERADMIN_EMAILS` during first identity sync.
+- [x] Replace middleware/admin guard checks to Better Auth session verification.
 - [ ] Remove legacy shim session logic after compatibility window.
 
 Acceptance criteria:
 
-- [ ] Login/register works through Better Auth endpoints.
-- [ ] Admin role is synced and enforced from domain user role.
-- [ ] Non-admin blocked from `/admin/*`; admin allowed.
+- [x] Login/register works through Better Auth endpoints.
+- [x] Admin role is synced and enforced from domain user role.
+- [x] Non-admin blocked from `/admin/*`; admin allowed.
 - [ ] Cookie-shim auth code removed.
 
 ## Stage 3: Remaining Storefront/Checkout/Auth Areas

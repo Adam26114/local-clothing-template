@@ -9,9 +9,9 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { DEFAULT_SHIPPING_FEE } from '@/lib/constants';
-import { formatMmk } from '@/lib/currency';
-import { storeSettings } from '@/lib/mock-data';
-import { useCart } from '@/components/store/cart-context';
+import { formatMmk } from '@/lib/utils/currency';
+import { storeSettings } from '@/lib/data/mock-data';
+import { useCart } from '@/context/cart-context';
 
 export default function CheckoutPage() {
   const { items, subtotal, clearCart } = useCart();

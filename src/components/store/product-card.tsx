@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { toast } from 'sonner';
 
-import { useCart } from '@/components/store/cart-context';
-import { formatMmk } from '@/lib/currency';
+import { useCart } from '@/context/cart-context';
+import { formatMmk } from '@/lib/utils/currency';
 import { Product } from '@/lib/types';
 
 export function ProductCard({ product }: { product: Product }) {

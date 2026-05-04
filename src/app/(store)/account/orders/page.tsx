@@ -1,8 +1,8 @@
 import Link from 'next/link';
 
-import { formatMmk } from '@/lib/currency';
+import { formatMmk } from '@/lib/utils/currency';
 import { getSession } from '@/lib/auth/session';
-import { orders } from '@/lib/mock-data';
+import { orders } from '@/lib/data/mock-data';
 
 export default async function AccountOrdersPage() {
   const session = await getSession();
