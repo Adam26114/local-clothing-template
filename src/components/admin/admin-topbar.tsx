@@ -27,10 +27,21 @@ const routeTitleMap: Array<{ match: RegExp; label: string }> = [
   { match: /^\/admin\/settings/, label: 'Settings' },
 ];
 
+/**
+ * Selects a user-facing title based on the current route pathname.
+ *
+ * @returns The label corresponding to the first matching route in the routeTitleMap, or `'Admin'` if no route matches.
+ */
 function titleFromPath(pathname: string): string {
   return routeTitleMap.find((entry) => entry.match.test(pathname))?.label ?? 'Admin';
 }
 
+/**
+ * Compute up to two uppercase initials from a provided string (typically an email or full name).
+ *
+ * @param value - The input string to derive initials from (e.g., an email address or name).
+ * @returns `KA` if the trimmed input is empty; otherwise returns up to two uppercase initials derived from the portion before `@`, splitting on `.`, `_`, whitespace, or `-`. If no word-splitting parts are found, returns the first two characters of the trimmed input in uppercase.
+ */
 function initials(value: string): string {
   const cleaned = value.trim();
   if (!cleaned) return 'KA';
@@ -42,6 +53,14 @@ function initials(value: string): string {
     .join('');
 }
 
+/**
+ * Renders the admin top navigation bar showing the current route title, notification button, theme controls, and user menu.
+ *
+ * The user menu displays the provided email (or a default) and an avatar derived from that email; it also exposes a sign-out action.
+ *
+ * @param userEmail - Optional email to display in the user menu and to generate avatar initials; defaults to `admin@khit.mm` when omitted.
+ * @returns The header element containing the topbar UI for the admin area.
+ */
 export function AdminTopbar({ userEmail }: { userEmail?: string }) {
   const pathname = usePathname();
   const { resolvedTheme, setTheme } = useTheme();

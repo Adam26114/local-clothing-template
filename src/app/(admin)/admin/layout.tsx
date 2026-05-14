@@ -6,6 +6,12 @@ import { AdminTopbar } from '@/components/admin/admin-topbar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { getSession } from '@/lib/auth/session';
 
+/**
+ * Renders the authenticated admin layout with sidebar and topbar and enforces authentication and admin authorization.
+ *
+ * @param children - Page content to be rendered inside the admin layout.
+ * @returns The admin layout element containing a (default-closed) sidebar, an admin topbar, and the provided children. Redirects to the login page if the user is unauthenticated and to the account page if the user is not an admin.
+ */
 export default async function AdminLayout({ children }: { children: ReactNode }) {
   const session = await getSession();
 
